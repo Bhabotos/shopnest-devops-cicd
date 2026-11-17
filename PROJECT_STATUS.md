@@ -1,6 +1,6 @@
 # PROJECT STATUS — ShopNest DevOps CI/CD
 
-Last updated: 2026-11-17 | Current phase: Phase 1 local Git setup done; GitHub repo creation/push awaiting approval
+Last updated: 2026-11-17 | Current phase: Phase 1 published; PR #1 open and awaiting review/merge
 Detailed per-requirement tracking (status, validation, evidence, commit/run): docs/REQUIREMENTS_CHECKLIST.md
 
 ## Part tracker
@@ -20,7 +20,7 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Docs, .gitignore, checklist, architecture | Done (awaiting review) |
-| 1 | git init, gitleaks pre-commit hook, GitHub repo + push protection | Local part done: git init, hook active, root commit, feature branch, Conventional commits, full-history gitleaks scan clean. Pending: GitHub repo creation and push (need approval) |
+| 1 | git init, gitleaks pre-commit hook, GitHub repo + push protection | Done except merge: public repo created, both branches pushed, secret scanning and push protection enabled, PR #1 open (not merged). Branch protection deliberately not configured until CI exists (Phase 3) |
 | 2 | App code (frontend, backend, tests) | Pending |
 | 3 | CI workflow + branch protection (B, C) | Pending |
 | 4 | Terraform: plan review, apply only on explicit approval; SSH strategy setup (E) | Pending |
@@ -45,7 +45,26 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 - 2026-11-17: Proposed (not deployed): sweeper every 5 min, temporary SSH rule expiry 15 min, deploy job timeout <= 10 min, EventBridge rule plus CloudWatch alarms for cleanup failures (docs/OIDC_DESIGN.md).
 - 2026-11-17: IAM cannot enforce port or CIDR for security group rules (no documented condition key); the workflow enforces tcp/22 and the runner /32, the sweeper detects violations.
 
-## Local Git state (no remote yet)
+## GitHub state (verified with `gh` on 2026-11-17)
+| Item | Value |
+|---|---|
+| Repository | https://github.com/Bhabotos/shopnest-devops-cicd |
+| Visibility | Public |
+| Default branch | main |
+| Remote | `origin` (HTTPS), fetch and push |
+| Pull request | #1 https://github.com/Bhabotos/shopnest-devops-cicd/pull/1 |
+| PR state | OPEN, not draft, base `main`, head `docs/project-foundation`, mergeable, merge state clean |
+| PR title | docs: establish ShopNest project foundation |
+| Remote `main` | eca306c17c924f6ac49b52d4e8834998cd494c09 |
+| Remote `docs/project-foundation` | 0dd2454e62eed6eb8f37df2d51bb070f4e5572f5 (at verification time; the PR status-update commit follows it) |
+| Secret scanning | enabled |
+| Push protection | enabled |
+| Secret-scanning alerts | 0 |
+| Branch protection / rulesets on main | None configured (deliberate, until CI exists) |
+| Actions workflows / runs / secrets | 0 / 0 / 0 |
+| AWS resources, Terraform apply, deployment | None have occurred |
+
+## Commits
 | Commit | Branch | Message |
 |---|---|---|
 | eca306c | main | chore: add secret-scanning guard and ignore rules |
@@ -53,8 +72,17 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 | fda914c | docs/project-foundation | docs: add architecture and GitHub OIDC design |
 | 2054e22 | docs/project-foundation | docs: add GitHub repository setup instructions |
 | 2fd9fb6 | docs/project-foundation | docs: add project status tracker |
+| f127deb | docs/project-foundation | docs: record Phase 1 commits and secret-scan results |
+| 0dd2454 | docs/project-foundation | docs: add final pre-publication secret scan result |
+| (next) | docs/project-foundation | docs: update GitHub repository and PR status (this update; see `git log`) |
 
-Validation 2026-11-17: pre-commit hook ran on each commit (no leaks); gitleaks full-history scan of 5 commits: no leaks; history grep for IPs, key material, AWS key ids, EC2 hostnames and secret-like file names: 0 matches. Log: docs/evidence/secret-scan/phase1-history-scan.txt. The assignment DOCX is not tracked.
+## Secret-scan validation
+- Pre-commit hook ran on every commit (no leaks).
+- Gitleaks full-history scans (all refs): 5 commits clean and 6 commits clean, both recorded in docs/evidence/secret-scan/phase1-history-scan.txt.
+- 7-commit scan (all refs, 2026-11-17, after publishing, includes `origin/*` refs): no leaks found. **Evidence limitation:** this 7-commit result was only observed in the terminal during the session and is NOT saved in the evidence file, which contains the 5- and 6-commit scans only. A final scan must be saved before submission.
+- History grep for IPs, key material, AWS key ids, EC2 hostnames and secret-like file names: 0 matches.
+- The assignment DOCX is not tracked and is ignored.
+
 Note: `.gitattributes` was added to the root commit (not in the original file list) to keep the hook LF on Windows checkouts.
 
 ## Open questions
@@ -69,7 +97,8 @@ Note: `.gitattributes` was added to the root commit (not in the original file li
 ## Manual actions log
 - 2026-11-17: Gitleaks 8.30.1 installed via winget (user-approved).
 - 2026-11-17: User provided the verified GitHub noreply email; set as local repo config only (global config unchanged).
-- 2026-11-17: Assistant ran git init, created commits and the history scan locally (no push, no remote).
+- 2026-11-17: Assistant ran git init, created commits and the history scan locally.
+- 2026-11-17: With the user's approval, assistant created the public repository, pushed `main` and `docs/project-foundation`, and opened PR #1 (not merged). No other GitHub settings were changed; secret scanning and push protection were already enabled.
 
 ## Risks / limitations
 - Scheduled sweeper is best-effort: GitHub can delay or drop runs and disables them after 60 days of public-repo inactivity; nominal orphan exposure is about 20 minutes, not bounded.
