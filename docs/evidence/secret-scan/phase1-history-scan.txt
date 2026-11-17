@@ -1,0 +1,30 @@
+Phase 1 full-history secret scan
+Date: 2026-11-17
+Tool: gitleaks 8.30.1 with .gitleaks.toml (default rules + IPv4 + EC2 hostname rules)
+Scope: all refs, history through 2fd9fb6 on branch docs/project-foundation
+Command: gitleaks git --log-opts=--all --config .gitleaks.toml --redact --no-banner --no-color
+Commits in scope: 5
+----- gitleaks output -----
+11:04PM INF 5 commits scanned.
+11:04PM INF scanned ~54346 bytes (54.35 KB) in 201ms
+11:04PM INF no leaks found
+gitleaks exit code: 0
+----- supplementary grep over all history (IPv4, URLs excluded, key material, AWS key ids) -----
+matching lines: 0
+----- files ever tracked matching secret-like names -----
+matching paths: 0
+
+==================================================================
+Update: final pre-publication scan
+Date: 2026-11-17
+Tool: gitleaks 8.30.1 with .gitleaks.toml
+Scope: all refs, history through f127deb on branch docs/project-foundation
+Commits in scope: 6
+Command: gitleaks git --log-opts=--all --config .gitleaks.toml --redact --no-banner --no-color
+----- gitleaks output -----
+11:09PM INF 6 commits scanned.
+11:09PM INF scanned ~57915 bytes (57.92 KB) in 196ms
+11:09PM INF no leaks found
+gitleaks exit code: 0
+supplementary history grep matching lines: 0
+remote configured at time of scan: 0
