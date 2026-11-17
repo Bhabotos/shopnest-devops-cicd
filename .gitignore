@@ -1,0 +1,57 @@
+# Secrets & keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.ppk
+id_rsa*
+id_ed25519*
+*.crt
+secrets/
+*.secret
+credentials*
+.aws/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+.terraform.lock.hcl.bak
+tfplan
+*.tfplan
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+npm-debug.log*
+yarn-error.log*
+.vite/
+
+# Docker / local runtime
+docker-compose.override.yml
+pgdata/
+*.log
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Assignment material (instructor document, not published)
+/assignment/
+
+# Scanner reports may echo findings; keep them local
+gitleaks-report*
+*.sarif

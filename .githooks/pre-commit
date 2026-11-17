@@ -1,0 +1,24 @@
+#!/bin/sh
+# Versioned pre-commit hook: block commits that contain secrets or server addresses.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Fails closed: if gitleaks cannot be found the commit is rejected.
+
+GITLEAKS="$(command -v gitleaks 2>/dev/null)"
+
+if [ -z "$GITLEAKS" ] && [ -n "$LOCALAPPDATA" ]; then
+  # winget installs may not be on PATH in an already-open shell
+  GITLEAKS="$(find "$LOCALAPPDATA/Microsoft/WinGet" -name gitleaks.exe 2>/dev/null | head -n 1)"
+fi
+
+if [ -z "$GITLEAKS" ]; then
+  echo "pre-commit: gitleaks not found. Install it (winget install gitleaks.gitleaks) and retry." >&2
+  exit 1
+fi
+
+"$GITLEAKS" git --pre-commit --staged --config .gitleaks.toml --redact --no-banner --verbose
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo "pre-commit: gitleaks found potential secrets or server addresses. Commit blocked." >&2
+  exit 1
+fi

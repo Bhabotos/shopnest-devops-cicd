@@ -1,0 +1,2 @@
+# Keep the versioned hook LF so it runs under sh on every OS
+.githooks/* text eol=lf
