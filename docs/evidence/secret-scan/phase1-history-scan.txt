@@ -13,3 +13,18 @@ gitleaks exit code: 0
 matching lines: 0
 ----- files ever tracked matching secret-like names -----
 matching paths: 0
+
+==================================================================
+Update: final pre-publication scan
+Date: 2026-11-17
+Tool: gitleaks 8.30.1 with .gitleaks.toml
+Scope: all refs, history through f127deb on branch docs/project-foundation
+Commits in scope: 6
+Command: gitleaks git --log-opts=--all --config .gitleaks.toml --redact --no-banner --no-color
+----- gitleaks output -----
+11:09PM INF 6 commits scanned.
+11:09PM INF scanned ~57915 bytes (57.92 KB) in 196ms
+11:09PM INF no leaks found
+gitleaks exit code: 0
+supplementary history grep matching lines: 0
+remote configured at time of scan: 0
