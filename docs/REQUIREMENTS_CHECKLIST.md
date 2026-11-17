@@ -36,12 +36,12 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 ## Part D — Secrets and configuration management (10 marks; 0 if any credential in repo/history)
 | ID | Type | Requirement | Status | Validation method | Evidence location | Commit / Run |
 |---|---|---|---|---|---|---|
-| D1 | M | No credential, key, password or server address in repo or commit history | In progress (guard only; no history exists yet) | gitleaks over full history plus grep for IPs/hostnames, before every push and at the end. So far: .gitleaks.toml and versioned pre-commit hook written; local file scans clean and hook block/allow/fail-closed tests passed in scratch repos on 2026-11-17 | docs/evidence/secret-scan (pending; no project history scanned yet) | none (no repo yet) |
+| D1 | M | No credential, key, password or server address in repo or commit history | In progress (guard active; final scan before submission still required) | gitleaks over full history plus grep for IPs/hostnames, before every push and at the end. Done 2026-11-17: hook ran on all 5 local commits; full-history scan of 5 commits found no leaks; history grep found 0 matches | docs/evidence/secret-scan/phase1-history-scan.txt | eca306c (guard); scan covers up to 2fd9fb6 |
 | D2 | M | Sensitive values stored and used securely | Not started | Values only in GitHub Secrets; masked in logs | docs/screenshots/secrets-settings (names only) (pending) | pending |
 | D3 | M | Separate configuration for staging and production | Not started | Separate GitHub Environments and config files | docs/screenshots/environments (pending) | pending |
 | D4 | M | Production deployment requires manual approval | Not started | Run pauses at approval gate | docs/screenshots/prod-approval (pending) | pending |
 | D5 | M | README lists every secret and variable (name and purpose, never value) | Not started | Cross-check README list against workflow references | README.md (pending) | pending |
-| D6 | R | No permanent AWS keys; temporary credentials only | In progress (design only, nothing created) | Review IAM/OIDC setup after Phase 4 | docs/OIDC_DESIGN.md (design); implementation evidence pending | none |
+| D6 | R | No permanent AWS keys; temporary credentials only | In progress (design only, nothing created) | Review IAM/OIDC setup after Phase 4 | docs/OIDC_DESIGN.md (design); implementation evidence pending | fda914c (design doc) |
 
 ## Part E — Automated deployment to EC2 (15 marks)
 | ID | Type | Requirement | Status | Validation method | Evidence location | Commit / Run |
@@ -52,7 +52,7 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 | E4 | M | Database not reachable from public internet | Not started | Port 5432 test from outside fails; SG has no DB rule | docs/screenshots/db-private (pending) | pending |
 | E5 | M | Deployment runs only after CI succeeds | Not started | Failing CI does not trigger CD | docs/screenshots/cd-gating (pending) | pending |
 | E6 | M | Every deployment traceable to exact commit | Not started | /version, image tag and log show same SHA | docs/evidence/traceability (pending) | pending |
-| E7 | R | SSH not exposed unnecessarily (per-run opening, see ARCHITECTURE.md) | In progress (design only, nothing created) | SG shows 22 closed after run; sweeper/alarm tests in Phase 4-8 | docs/OIDC_DESIGN.md (design); screenshots pending | none |
+| E7 | R | SSH not exposed unnecessarily (per-run opening, see ARCHITECTURE.md) | In progress (design only, nothing created) | SG shows 22 closed after run; sweeper/alarm tests in Phase 4-8 | docs/OIDC_DESIGN.md (design); screenshots pending | fda914c (design doc) |
 
 ## Part F — Zero-downtime deployment (15 marks)
 | ID | Type | Requirement | Status | Validation method | Evidence location | Commit / Run |
@@ -88,7 +88,7 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 | I1 | M | README: overview, architecture diagram, setup instructions, pipeline explanation | Not started | Review against list | README.md (pending) | pending |
 | I2 | M | README: screenshots of successful and failed runs | Not started | Images resolve in repo | docs/screenshots/ (pending) | pending |
 | I3 | M | Clean, logical folder structure | Not started | Compare with planned layout | repo tree | pending |
-| I4 | M | Meaningful commit messages; branching workflow with PRs | Not started (no git repo yet) | Review git log and PR list | GitHub PR history | pending |
+| I4 | M | Meaningful commit messages; branching workflow with PRs | In progress (local repo, 5 Conventional commits, feature branch docs/project-foundation; no PR yet) | Review git log and PR list | git log (local); GitHub PR history pending | eca306c, 615a338, fda914c, 2054e22, 2fd9fb6 |
 | I5 | M | Anyone can reproduce the setup from the README alone | Not started | Dry-run read-through of README steps | README.md (pending) | pending |
 
 ## Submission rules

@@ -1,6 +1,6 @@
 # PROJECT STATUS — ShopNest DevOps CI/CD
 
-Last updated: 2026-11-17 | Current phase: Phase 1 in progress (non-Git tasks done; Git init blocked on verified noreply email)
+Last updated: 2026-11-17 | Current phase: Phase 1 local Git setup done; GitHub repo creation/push awaiting approval
 Detailed per-requirement tracking (status, validation, evidence, commit/run): docs/REQUIREMENTS_CHECKLIST.md
 
 ## Part tracker
@@ -20,7 +20,7 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Docs, .gitignore, checklist, architecture | Done (awaiting review) |
-| 1 | git init, gitleaks pre-commit hook, GitHub repo + push protection | In progress: gitleaks config, hook, .gitignore, GITHUB_SETUP.md and OIDC_DESIGN.md (verified against official docs where possible) written; git init, commits, history scan and repo creation pending the verified noreply email |
+| 1 | git init, gitleaks pre-commit hook, GitHub repo + push protection | Local part done: git init, hook active, root commit, feature branch, Conventional commits, full-history gitleaks scan clean. Pending: GitHub repo creation and push (need approval) |
 | 2 | App code (frontend, backend, tests) | Pending |
 | 3 | CI workflow + branch protection (B, C) | Pending |
 | 4 | Terraform: plan review, apply only on explicit approval; SSH strategy setup (E) | Pending |
@@ -45,6 +45,18 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 - 2026-11-17: Proposed (not deployed): sweeper every 5 min, temporary SSH rule expiry 15 min, deploy job timeout <= 10 min, EventBridge rule plus CloudWatch alarms for cleanup failures (docs/OIDC_DESIGN.md).
 - 2026-11-17: IAM cannot enforce port or CIDR for security group rules (no documented condition key); the workflow enforces tcp/22 and the runner /32, the sweeper detects violations.
 
+## Local Git state (no remote yet)
+| Commit | Branch | Message |
+|---|---|---|
+| eca306c | main | chore: add secret-scanning guard and ignore rules |
+| 615a338 | docs/project-foundation | docs: add project rules and requirements checklist |
+| fda914c | docs/project-foundation | docs: add architecture and GitHub OIDC design |
+| 2054e22 | docs/project-foundation | docs: add GitHub repository setup instructions |
+| 2fd9fb6 | docs/project-foundation | docs: add project status tracker |
+
+Validation 2026-11-17: pre-commit hook ran on each commit (no leaks); gitleaks full-history scan of 5 commits: no leaks; history grep for IPs, key material, AWS key ids, EC2 hostnames and secret-like file names: 0 matches. Log: docs/evidence/secret-scan/phase1-history-scan.txt. The assignment DOCX is not tracked.
+Note: `.gitattributes` was added to the root commit (not in the original file list) to keep the hook LF on Windows checkouts.
+
 ## Open questions
 1. Live URL vs. no server address in repo — pending instructor clarification.
 2. SSH strategy: OIDC design documented with a verification log (docs/OIDC_DESIGN.md); creation of AWS resources still needs explicit approval in Phase 4.
@@ -52,11 +64,12 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
    2b. Unverified items listed in OIDC_DESIGN.md rows 8, 9, 11, 12, 14, 20, 23, 24 and the EC2 policy-examples page (returned no content).
    2c. EventBridge/CloudTrail/CloudWatch/SNS resources for alerts need approval and add cost.
 3. Terraform state: decided local and git-ignored (revisit only if needed).
-4. Verified GitHub noreply email required before git init (not yet provided).
+4. (Resolved 2026-11-17) Verified noreply email provided and configured for this repository only.
 
 ## Manual actions log
 - 2026-11-17: Gitleaks 8.30.1 installed via winget (user-approved).
-- Pending from user: verified GitHub noreply email (before git init and any commit).
+- 2026-11-17: User provided the verified GitHub noreply email; set as local repo config only (global config unchanged).
+- 2026-11-17: Assistant ran git init, created commits and the history scan locally (no push, no remote).
 
 ## Risks / limitations
 - Scheduled sweeper is best-effort: GitHub can delay or drop runs and disables them after 60 days of public-repo inactivity; nominal orphan exposure is about 20 minutes, not bounded.
