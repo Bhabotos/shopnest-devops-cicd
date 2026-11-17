@@ -88,7 +88,7 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 | I1 | M | README: overview, architecture diagram, setup instructions, pipeline explanation | Not started | Review against list | README.md (pending) | pending |
 | I2 | M | README: screenshots of successful and failed runs | Not started | Images resolve in repo | docs/screenshots/ (pending) | pending |
 | I3 | M | Clean, logical folder structure | Not started | Compare with planned layout | repo tree | pending |
-| I4 | M | Meaningful commit messages; branching workflow with PRs | In progress (public repo, 7 Conventional commits, feature branch docs/project-foundation, PR #1 open and not yet merged) | Review git log and PR list | PR #1 https://github.com/Bhabotos/shopnest-devops-cicd/pull/1; git log | eca306c, 615a338, fda914c, 2054e22, 2fd9fb6, f127deb, 0dd2454 |
+| I4 | M | Meaningful commit messages; branching workflow with PRs | In progress (public repo; PR #1 merged with a normal merge commit; PR #2 open; root commit plus 7 Conventional commits on docs/project-foundation and 1 on docs/post-merge-status; CI-gated PR workflow not yet possible because no CI exists) | Review git log and PR list | PR #1 (merged) https://github.com/Bhabotos/shopnest-devops-cicd/pull/1; PR #2 (open) https://github.com/Bhabotos/shopnest-devops-cicd/pull/2; git log | eca306c, 615a338, fda914c, 2054e22, 2fd9fb6, f127deb, 0dd2454, e6e7cbc, merge 668a93e, 9683fdd |
 | I5 | M | Anyone can reproduce the setup from the README alone | Not started | Dry-run read-through of README steps | README.md (pending) | pending |
 
 ## Submission rules
