@@ -28,3 +28,15 @@ Command: gitleaks git --log-opts=--all --config .gitleaks.toml --redact --no-ban
 gitleaks exit code: 0
 supplementary history grep matching lines: 0
 remote configured at time of scan: 0
+
+==================================================================
+Update: post-merge scan (after PR #1 merge, PR #2 open)
+Date: 2026-11-18
+Tool: gitleaks 8.30.1 with .gitleaks.toml
+Scope: all refs (local and origin/*), branch docs/post-merge-status at 5f054ac; 11 commits reachable
+Command: gitleaks git --log-opts=--all --config .gitleaks.toml --redact --no-banner --no-color
+----- gitleaks output -----
+8:56PM INF 10 commits scanned.
+8:56PM INF scanned ~65641 bytes (65.64 KB) in 210ms
+8:56PM INF no leaks found
+gitleaks exit code: 0

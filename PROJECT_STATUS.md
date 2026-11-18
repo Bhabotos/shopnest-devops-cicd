@@ -1,6 +1,6 @@
 # PROJECT STATUS — ShopNest DevOps CI/CD
 
-Last updated: 2026-11-17 | Current phase: Phase 1 complete (PR #1 merged); next: Phase 2 awaiting approval
+Last updated: 2026-11-18 | Current phase: Phase 1 complete (PR #1 merged); next: Phase 2 awaiting approval
 Detailed per-requirement tracking (status, validation, evidence, commit/run): docs/REQUIREMENTS_CHECKLIST.md
 
 ## Part tracker
@@ -80,7 +80,7 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 ## Secret-scan validation
 - Pre-commit hook ran on every commit (no leaks).
 - Gitleaks full-history scans (all refs): 5 commits clean and 6 commits clean, both recorded in docs/evidence/secret-scan/phase1-history-scan.txt.
-- Post-publication all-refs scans (7 commits, then 8 commits after the PR status commit, and again after the merge on 2026-11-17): no leaks found. **Evidence limitation:** these results were only observed in the terminal during the session and are NOT saved in the evidence file, which contains the 5- and 6-commit scans only. A final scan must be saved before submission.
+- Post-publication all-refs scans (7 commits, then 8 commits after the PR status commit, and again after the merge on 2026-11-17): no leaks found. **Evidence limitation:** these three results were only observed in the terminal and are NOT saved. The 2026-11-18 post-merge all-refs scan (10 commits scanned, no leaks) IS saved in docs/evidence/secret-scan/phase1-history-scan.txt. A final scan must still be saved before submission.
 - History grep for IPs, key material, AWS key ids, EC2 hostnames and secret-like file names: 0 matches.
 - The assignment DOCX is not tracked and is ignored.
 
