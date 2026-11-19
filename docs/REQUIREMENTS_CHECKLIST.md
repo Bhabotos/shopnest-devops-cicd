@@ -1,5 +1,5 @@
 # Requirements Checklist
-Source: assignment/GITHUB ACTIONS.docx (100 marks). Last updated: 2026-11-17.
+Source: assignment/GITHUB ACTIONS.docx (100 marks). Last updated: 2026-11-19.
 
 Legend. Type: M = mandatory (from the document), R = our recommendation (not required).
 Status: Not started / In progress / Implemented / Validated. Only mark Validated with real evidence.
@@ -36,7 +36,7 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 ## Part D — Secrets and configuration management (10 marks; 0 if any credential in repo/history)
 | ID | Type | Requirement | Status | Validation method | Evidence location | Commit / Run |
 |---|---|---|---|---|---|---|
-| D1 | M | No credential, key, password or server address in repo or commit history | In progress (guard active, repo public; final scan before submission still required) | gitleaks over full history plus grep for IPs/hostnames, before every push and at the end. Done 2026-11-17: hook ran on every commit; scans of 5 and 6 commits recorded; a 7-commit all-refs scan after publishing was clean but is NOT saved in the evidence file; history grep 0 matches. GitHub secret scanning and push protection verified enabled, 0 alerts | docs/evidence/secret-scan/phase1-history-scan.txt (5- and 6-commit scans); GitHub security settings via `gh api` (no screenshot yet) | eca306c (guard); evidence 0dd2454; repo pushed and PR #1 open |
+| D1 | M | No credential, key, password or server address in repo or commit history | In progress (guard active, repo public; final saved scan before submission still required; the repository is not shown to be free of secrets) | gitleaks runs with `--log-opts=--all` plus grep for IPs/hostnames, before every push and at the end. The saved runs report commit counts only: exact commit coverage is UNKNOWN, and three earlier scans are TERMINAL-ONLY and cannot be verified (details and labels: PROJECT_STATUS.md, Secret-scan validation). GitHub secret scanning and push protection enabled, 0 alerts (CLI-verified 2026-11-19). Personal email in the metadata of commit 668a93e: see PROJECT_STATUS.md Risks; it is not a credential. | docs/evidence/secret-scan/phase1-history-scan.txt (5-, 6- and 10-commit runs); GitHub security settings via `gh api` (no screenshot yet) | eca306c (guard); evidence 0dd2454, c971105; repo pushed; PR #1 merged (668a93e); PR #2 open |
 | D2 | M | Sensitive values stored and used securely | Not started | Values only in GitHub Secrets; masked in logs | docs/screenshots/secrets-settings (names only) (pending) | pending |
 | D3 | M | Separate configuration for staging and production | Not started | Separate GitHub Environments and config files | docs/screenshots/environments (pending) | pending |
 | D4 | M | Production deployment requires manual approval | Not started | Run pauses at approval gate | docs/screenshots/prod-approval (pending) | pending |
@@ -88,7 +88,7 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 | I1 | M | README: overview, architecture diagram, setup instructions, pipeline explanation | Not started | Review against list | README.md (pending) | pending |
 | I2 | M | README: screenshots of successful and failed runs | Not started | Images resolve in repo | docs/screenshots/ (pending) | pending |
 | I3 | M | Clean, logical folder structure | Not started | Compare with planned layout | repo tree | pending |
-| I4 | M | Meaningful commit messages; branching workflow with PRs | In progress (public repo, 7 Conventional commits, feature branch docs/project-foundation, PR #1 open and not yet merged) | Review git log and PR list | PR #1 https://github.com/Bhabotos/shopnest-devops-cicd/pull/1; git log | eca306c, 615a338, fda914c, 2054e22, 2fd9fb6, f127deb, 0dd2454 |
+| I4 | M | Meaningful commit messages; branching workflow with PRs | In progress (public repo; PR #1 merged with a normal merge commit; PR #2 open; root commit plus 7 Conventional commits on docs/project-foundation and 3 on docs/post-merge-status as of c971105; CI-gated PR workflow not yet possible because no CI exists) | Review git log and PR list | PR #1 (merged) https://github.com/Bhabotos/shopnest-devops-cicd/pull/1; PR #2 (open) https://github.com/Bhabotos/shopnest-devops-cicd/pull/2; git log | eca306c, 615a338, fda914c, 2054e22, 2fd9fb6, f127deb, 0dd2454, e6e7cbc, merge 668a93e, 9683fdd, 5f054ac, c971105 |
 | I5 | M | Anyone can reproduce the setup from the README alone | Not started | Dry-run read-through of README steps | README.md (pending) | pending |
 
 ## Submission rules

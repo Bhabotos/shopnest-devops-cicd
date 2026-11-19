@@ -1,6 +1,6 @@
 # PROJECT STATUS — ShopNest DevOps CI/CD
 
-Last updated: 2026-11-17 | Current phase: Phase 1 published; PR #1 open and awaiting review/merge
+Last updated: 2026-11-19 | Current phase: Phase 1 complete (PR #1 merged); next: Phase 2 awaiting approval. PR #2 (documentation correction) is open.
 Detailed per-requirement tracking (status, validation, evidence, commit/run): docs/REQUIREMENTS_CHECKLIST.md
 
 ## Part tracker
@@ -19,8 +19,8 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 ## Roadmap
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Docs, .gitignore, checklist, architecture | Done (awaiting review) |
-| 1 | git init, gitleaks pre-commit hook, GitHub repo + push protection | Done except merge: public repo created, both branches pushed, secret scanning and push protection enabled, PR #1 open (not merged). Branch protection deliberately not configured until CI exists (Phase 3) |
+| 0 | Docs, .gitignore, checklist, architecture | Done (merged to main in PR #1) |
+| 1 | git init, gitleaks pre-commit hook, GitHub repo + push protection | Done: public repo, branches pushed, secret scanning and push protection enabled, PR #1 merged. Branch protection deliberately not configured until CI exists (Phase 3) |
 | 2 | App code (frontend, backend, tests) | Pending |
 | 3 | CI workflow + branch protection (B, C) | Pending |
 | 4 | Terraform: plan review, apply only on explicit approval; SSH strategy setup (E) | Pending |
@@ -45,7 +45,7 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 - 2026-11-17: Proposed (not deployed): sweeper every 5 min, temporary SSH rule expiry 15 min, deploy job timeout <= 10 min, EventBridge rule plus CloudWatch alarms for cleanup failures (docs/OIDC_DESIGN.md).
 - 2026-11-17: IAM cannot enforce port or CIDR for security group rules (no documented condition key); the workflow enforces tcp/22 and the runner /32, the sweeper detects violations.
 
-## GitHub state (verified with `gh` on 2026-11-17)
+## GitHub state (verified with `gh` on 2026-11-17; rows marked 2026-11-19 were checked again)
 | Item | Value |
 |---|---|
 | Repository | https://github.com/Bhabotos/shopnest-devops-cicd |
@@ -53,13 +53,15 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 | Default branch | main |
 | Remote | `origin` (HTTPS), fetch and push |
 | Pull request | #1 https://github.com/Bhabotos/shopnest-devops-cicd/pull/1 |
-| PR state | OPEN, not draft, base `main`, head `docs/project-foundation`, mergeable, merge state clean |
+| PR state | MERGED 2026-11-17T17:24:31Z by Bhabotos with a normal merge commit (no squash or rebase); base `main`, head `docs/project-foundation` |
 | PR title | docs: establish ShopNest project foundation |
-| Remote `main` | eca306c17c924f6ac49b52d4e8834998cd494c09 |
-| Remote `docs/project-foundation` | 0dd2454e62eed6eb8f37df2d51bb070f4e5572f5 (at verification time; the PR status-update commit follows it) |
-| Secret scanning | enabled |
-| Push protection | enabled |
-| Secret-scanning alerts | 0 |
+| Remote `main` | 668a93e82f72b0ea804367714e34b64c6412306f (merge commit of PR #1; parents eca306c and e6e7cbc) |
+| Remote `docs/project-foundation` | e6e7cbcd04a32fa89438dc02d1b916422e57490b (branch kept after merge, as requested) |
+| Pull request #2 | https://github.com/Bhabotos/shopnest-devops-cicd/pull/2 (CLI-verified 2026-11-19): OPEN, not draft, base `main`, head `docs/post-merge-status` at c971105, 3 commits (9683fdd, 5f054ac, c971105), 3 documentation files changed, MERGEABLE, merge state CLEAN, no status checks, no review decision |
+| Secret scanning | enabled (re-verified 2026-11-19) |
+| Push protection | enabled (re-verified 2026-11-19) |
+| Secret-scanning alerts | 0 (re-verified 2026-11-19) |
+| Email privacy | USER-REPORTED: "Keep my email addresses private" and "Block command line pushes that expose my email" are enabled in the GitHub web UI. CLI-VERIFIED 2026-11-19: `gh api user/public_emails` returns `[]`. UNKNOWN: the state of the block-pushes toggle (reading it needs the `user` token scope, which was not requested). No screenshot of these settings exists in the repository (CLI-verified: 0 image files). |
 | Branch protection / rulesets on main | None configured (deliberate, until CI exists) |
 | Actions workflows / runs / secrets | 0 / 0 / 0 |
 | AWS resources, Terraform apply, deployment | None have occurred |
@@ -74,14 +76,22 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 | 2fd9fb6 | docs/project-foundation | docs: add project status tracker |
 | f127deb | docs/project-foundation | docs: record Phase 1 commits and secret-scan results |
 | 0dd2454 | docs/project-foundation | docs: add final pre-publication secret scan result |
-| (next) | docs/project-foundation | docs: update GitHub repository and PR status (this update; see `git log`) |
+| e6e7cbc | docs/project-foundation | docs: update GitHub repository and PR status |
+| 668a93e | main | Merge pull request #1 from Bhabotos/docs/project-foundation |
+| 9683fdd | docs/post-merge-status | docs: update project status after PR #1 merge |
+| 5f054ac | docs/post-merge-status | docs: mark PR #1 as merged in checklist row I4 |
+| c971105 | docs/post-merge-status | docs: save post-merge gitleaks scan as evidence |
 
 ## Secret-scan validation
-- Pre-commit hook ran on every commit (no leaks).
-- Gitleaks full-history scans (all refs): 5 commits clean and 6 commits clean, both recorded in docs/evidence/secret-scan/phase1-history-scan.txt.
-- 7-commit scan (all refs, 2026-11-17, after publishing, includes `origin/*` refs): no leaks found. **Evidence limitation:** this 7-commit result was only observed in the terminal during the session and is NOT saved in the evidence file, which contains the 5- and 6-commit scans only. A final scan must be saved before submission.
-- History grep for IPs, key material, AWS key ids, EC2 hostnames and secret-like file names: 0 matches.
-- The assignment DOCX is not tracked and is ignored.
+Labels: SAVED = text recorded in docs/evidence/secret-scan/phase1-history-scan.txt; TERMINAL-ONLY = reported in earlier status notes as seen in a terminal, with no record, so it cannot be verified; CLI-VERIFIED = checked with read-only `git` or `gh` on the stated date; USER-REPORTED = stated by the user, not independently verified; UNKNOWN = not recorded and not verifiable.
+
+- Pre-commit hook: `.githooks/pre-commit` (gitleaks 8.30.1, staged files) is tracked and `core.hooksPath` is set to `.githooks` (CLI-VERIFIED 2026-11-19). That it ran on each commit was reported in earlier sessions; the hook output was not saved, so this is UNKNOWN.
+- SAVED: gitleaks 8.30.1 runs with `--log-opts=--all` and `.gitleaks.toml` on 2026-11-17 printed "5 commits scanned" (scope line: history through 2fd9fb6) and "6 commits scanned" (scope line: history through f127deb), with "no leaks found" and exit code 0. CLI-VERIFIED 2026-11-19 with `git`: 5 commits are reachable from 2fd9fb6 and 6 from f127deb. The saved output lists only counts, so which commits each run scanned is UNKNOWN, and complete coverage of the history is not verified.
+- TERMINAL-ONLY (not evidence): three post-publication scans on 2026-11-17 (7 commits, 8 commits after the PR status commit, and after the merge) are reported to have shown no leaks. No record exists and none is reconstructed here.
+- SAVED: the 2026-11-18 post-merge run. Recorded scope: "all refs (local and origin/*), branch docs/post-merge-status at 5f054ac; 11 commits reachable". Recorded output: "10 commits scanned", "no leaks found", exit code 0. CLI-VERIFIED 2026-11-19 with `git`: 11 commits are reachable from 5f054ac, one of them merge commit 668a93e. UNKNOWN: which commits were scanned and how the merge commit was handled, so whether 668a93e was among the 10 is not known. Commits after 5f054ac were not covered by that run. A final saved scan is still required before submission.
+- "No leaks found" means no match against the gitleaks default ruleset plus this repository's IPv4 and EC2-hostname rules. It does not show that the repository contains no secret.
+- SAVED: supplementary history grep (IPs, key material, AWS key ids, secret-like file names, as described in the evidence file): 0 matches, recorded for the 5- and 6-commit runs only. It was not run for the 2026-11-18 run.
+- The assignment DOCX is not tracked and is ignored (CLI-VERIFIED 2026-11-19).
 
 Note: `.gitattributes` was added to the root commit (not in the original file list) to keep the hook LF on Windows checkouts.
 
@@ -93,14 +103,19 @@ Note: `.gitattributes` was added to the root commit (not in the original file li
    2c. EventBridge/CloudTrail/CloudWatch/SNS resources for alerts need approval and add cost.
 3. Terraform state: decided local and git-ignored (revisit only if needed).
 4. (Resolved 2026-11-17) Verified noreply email provided and configured for this repository only.
+5. (Partly resolved) Merge-commit email exposure (see Risks). USER-REPORTED: "Keep my email addresses private" and "Block command line pushes that expose my email" are enabled in the GitHub web UI (no screenshot in the repository). CLI-VERIFIED 2026-11-19: `gh api user/public_emails` returns `[]`, so the primary email is not publicly listed; the global and the repository-local Git `user.email` are both the GitHub noreply address. UNKNOWN: the state of the block-pushes toggle (needs the `user` token scope, which was not requested). Still open: leave commit 668a93e as is (recommended) or rewrite `main`; no rewrite has been approved.
 
 ## Manual actions log
 - 2026-11-17: Gitleaks 8.30.1 installed via winget (user-approved).
 - 2026-11-17: User provided the verified GitHub noreply email; set as local repo config only (global config unchanged).
 - 2026-11-17: Assistant ran git init, created commits and the history scan locally.
-- 2026-11-17: With the user's approval, assistant created the public repository, pushed `main` and `docs/project-foundation`, and opened PR #1 (not merged). No other GitHub settings were changed; secret scanning and push protection were already enabled.
+- 2026-11-17: With the user's approval, assistant created the public repository, pushed `main` and `docs/project-foundation`, and opened PR #1. No other GitHub settings were changed; secret scanning and push protection were already enabled.
+- 2026-11-17: With the user's approval, assistant merged PR #1 with a normal merge commit (668a93e), kept the feature branch, and pulled `main` locally.
+- 2026-11-19: USER-REPORTED: the GitHub email privacy settings were enabled in the web UI. The assistant only checked that `gh api user/public_emails` returns `[]` (read-only; no extra token scopes requested; authentication not refreshed).
+- 2026-11-19: With the user's approval, the assistant set the global Git `user.email` to the GitHub noreply address. The global `user.name` and the repository-local email were not changed.
 
 ## Risks / limitations
+- Privacy (personal data, NOT a credential): merge commit 668a93e on `main` (PR #1, merged 2026-11-17T17:24:31Z, parents eca306c and e6e7cbc; CLI-verified with `git` and `gh` on 2026-11-19) has the account's primary, non-noreply email address and the account's name as author, and GitHub as committer. The author email address is therefore public in commit metadata. It is not a credential, key, password or server address; whether the instructor treats it as relevant to Part D is UNKNOWN. All other commits use the GitHub noreply address as author and committer (CLI-verified 2026-11-19). The email privacy settings were USER-REPORTED as enabled afterwards (see Open question 5); that does not change existing history. Commit 668a93e is unchanged and still public. No history rewrite has been performed or approved. Options: leave as is (recommended), or rewrite `main` with a force push, which may not remove the commit from GitHub's pull-request refs or from existing clones or forks.
 - Scheduled sweeper is best-effort: GitHub can delay or drop runs and disables them after 60 days of public-repo inactivity; nominal orphan exposure is about 20 minutes, not bounded.
 - IAM cannot restrict SSH rule port/CIDR; a compromised deploy job in an allowed environment could open other ports on the SSH group (mitigations in OIDC_DESIGN.md).
 - Single instance: staging/prod are not infrastructure-isolated (document in README).

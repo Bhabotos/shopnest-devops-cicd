@@ -28,3 +28,22 @@ Command: gitleaks git --log-opts=--all --config .gitleaks.toml --redact --no-ban
 gitleaks exit code: 0
 supplementary history grep matching lines: 0
 remote configured at time of scan: 0
+
+==================================================================
+Update: post-merge scan (after PR #1 merge, PR #2 open)
+Date: 2026-11-18
+Tool: gitleaks 8.30.1 with .gitleaks.toml
+Scope: all refs (local and origin/*), branch docs/post-merge-status at 5f054ac; 11 commits reachable
+Command: gitleaks git --log-opts=--all --config .gitleaks.toml --redact --no-banner --no-color
+----- gitleaks output -----
+8:56PM INF 10 commits scanned.
+8:56PM INF scanned ~65641 bytes (65.64 KB) in 210ms
+8:56PM INF no leaks found
+gitleaks exit code: 0
+
+==================================================================
+Clarification (appended 2026-11-19). No new scan was run. This is not scan output.
+- The first block above is headed "Phase 1 full-history secret scan". Its Scope line limits it to the history through 2fd9fb6 (5 commits). Later commits are not covered by that block.
+- Every block records only the number of commits scanned, not which commits. In the 2026-11-18 block, the Scope line says "11 commits reachable" and gitleaks printed "10 commits scanned". The output does not state how merge commit 668a93e was handled, so whether that merge commit is among the 10 is not recorded here. That block also records no supplementary grep result.
+- Three post-publication scans on 2026-11-17 (7 commits, 8 commits, and after the merge) were observed in the terminal only and are NOT recorded in this file.
+- Any new scan result will be appended only after a scan has actually been run.
