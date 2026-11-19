@@ -1,6 +1,6 @@
 # PROJECT STATUS — ShopNest DevOps CI/CD
 
-Last updated: 2026-11-19 | Current phase: Phase 1 complete (PR #1 merged); next: Phase 2 awaiting approval. PR #2 (documentation correction) is open.
+Last updated: 2026-11-19 | Current phase: Phase 1 complete (PR #1 and PR #2 merged); Phase 2 planning direction approved, implementation not started and awaiting approval.
 Detailed per-requirement tracking (status, validation, evidence, commit/run): docs/REQUIREMENTS_CHECKLIST.md
 
 ## Part tracker
@@ -8,7 +8,7 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 |---|---|---|---|---|---|
 | A | CI/CD concepts | 5 | Not started | – | README section |
 | B | CI pipeline | 15 | Not started | – | Needs branch protection |
-| C | Workflow architecture | 10 | Not started | – | Diagram + Node 20/22 matrix + artifacts |
+| C | Workflow architecture | 10 | Not started | – | Diagram + Node 22/24 matrix + artifacts |
 | D | Secrets & config | 10 | Not started | – | 0 if any secret in history |
 | E | EC2 deployment | 15 | Not started | – | DB must be non-public |
 | F | Zero downtime | 15 | Not started | – | Needs request-loop proof |
@@ -21,7 +21,7 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 |---|---|---|
 | 0 | Docs, .gitignore, checklist, architecture | Done (merged to main in PR #1) |
 | 1 | git init, gitleaks pre-commit hook, GitHub repo + push protection | Done: public repo, branches pushed, secret scanning and push protection enabled, PR #1 merged. Branch protection deliberately not configured until CI exists (Phase 3) |
-| 2 | App code (frontend, backend, tests) | Pending |
+| 2 | App code (frontend, backend, tests); PLANNING DIRECTION approved 2026-11-19 (see Decisions log), NOT implemented, implementation not yet approved; scope beyond the original line: PostgreSQL schema and migrations, frontend and backend Dockerfiles, local development Docker Compose, `.env.example` placeholder files | Pending |
 | 3 | CI workflow + branch protection (B, C) | Pending |
 | 4 | Terraform: plan review, apply only on explicit approval; SSH strategy setup (E) | Pending |
 | 5 | Docker/Compose/Nginx + CD staging over SSH (E) | Pending |
@@ -31,6 +31,24 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 | 9 | Copilot workflow + 3+ failure scenarios (H) | Pending |
 | 10 | README, screenshots, final history secret scan (A, C, I) | Pending |
 
+Mapping to the Phase 0-10 sequence used in planning conversations. This table's numbering stays authoritative and no status changes:
+
+| Planning-sequence phase | Name | Repository phase above |
+|---|---|---|
+| 0 | Repository and security foundation | 1 |
+| 1 | Documentation and architecture | 0 |
+| 2 | Three-tier application development | 2 |
+| 3 | Frontend and backend CI | 3 (CI part) |
+| 4 | GitHub Actions architecture and artifact management | 3 (architecture and artifacts part) |
+| 5 | Secrets and environment management | 6 |
+| 6 | AWS EC2 infrastructure and deployment | 4 and 5 |
+| 7 | Zero-downtime deployment | 7 |
+| 8 | Health checks, monitoring and rollback | 8 |
+| 9 | Failure simulation and Copilot debugging evidence | 9 |
+| 10 | Final README, screenshots and assignment validation | 10 |
+
+Because the two numberings differ for Phases 0 to 6, an approval must name the phase by repository number and by name, for example "Phase 4 (Terraform, SSH strategy)".
+
 ## Decisions log
 - 2026-11-17: Stack React+Vite / Express / PostgreSQL.
 - 2026-11-17: AWS ap-south-1, CLI profile `devops`, one EC2 instance to start.
@@ -38,12 +56,15 @@ Detailed per-requirement tracking (status, validation, evidence, commit/run): do
 - 2026-11-17: Docker Compose, Nginx, blue-green, health checks, auto rollback.
 - 2026-11-17: Staging and production share the single instance as isolated Compose projects.
 - 2026-11-17: No root credentials, no permanent AWS keys.
-- 2026-11-17: Node matrix is 20 and 22 (not 18).
+- 2026-11-17: Node matrix is 20 and 22 (not 18). (Superseded by the 2026-11-19 runtime entry below.)
 - 2026-11-17: SSH strategy = port 22 closed by default, opened per run (see ARCHITECTURE.md).
 - 2026-11-17: Rollback demo = controlled staging test with failed post-deploy validation.
 - 2026-11-17: Live URL pending; no IP/DNS/URL in any repo file.
 - 2026-11-17: Proposed (not deployed): sweeper every 5 min, temporary SSH rule expiry 15 min, deploy job timeout <= 10 min, EventBridge rule plus CloudWatch alarms for cleanup failures (docs/OIDC_DESIGN.md).
 - 2026-11-17: IAM cannot enforce port or CIDR for security group rules (no documented condition key); the workflow enforces tcp/22 and the runner /32, the sweeper detects violations.
+- 2026-11-19: Phase 2 planning direction approved by the user (planning only; NOT implemented; implementation not yet approved): React + Vite frontend; Node.js + Express 5 backend with Zod and pg (`/health`, `/version`, `/api/*`, guest checkout, graceful shutdown); PostgreSQL 16 schema and additive migrations; automated tests; frontend and backend Dockerfiles; local development Docker Compose with the database on an internal network, a named volume and no published port; `.env.example` files with placeholders only. Phase 2 stays separate from CI/CD, AWS and production deployment. These are our design choices (R); the assignment itself requires a frontend, a backend REST API, a relational database and meaningful tests.
+- 2026-11-19: Runtime direction approved as planning direction (not implemented): Node.js 22 and 24 for both backend and frontend, local development on Node.js 24. The Node 22 patch used must satisfy every selected dependency: per npm registry `engines` metadata read on 2026-11-19, jsdom 31.0.1 needs Node 22.22.2 or newer on the 22 line, vitest 5.0.5 needs 22.12 or newer and eslint 10.15.0 needs 22.13 or newer. Actual compatibility is to be verified before any dependency installation. The 2026-11-17 entry above is marked superseded, and CLAUDE.md, docs/ARCHITECTURE.md, docs/GITHUB_SETUP.md, checklist row C5 and the Part C tracker note were aligned with this entry in the same documentation update.
+- 2026-11-19: Phase 2 application decisions approved as planning direction (not implemented): small custom structured JSON logger with no logging dependency; Vitest for frontend and backend tests, with Supertest and React Testing Library; no React Router initially (simple view state, kept extensible); BDT as the initial demo currency, held in one central application constant and formatted with proper currency formatting; optional local-development backend loopback binding at 127.0.0.1:3100 (configurable; changed from 3000 because 3000 was in use on the development host) and the PostgreSQL port never published; about 45 meaningful tests (no artificial tests added to reach a number) across unit, API, database integration and frontend; about 8 fictional seed products with locally maintained placeholder SVG images and no copyrighted images.
 
 ## GitHub state (verified with `gh` on 2026-11-17; rows marked 2026-11-19 were checked again)
 | Item | Value |
@@ -104,6 +125,7 @@ Note: `.gitattributes` was added to the root commit (not in the original file li
 3. Terraform state: decided local and git-ignored (revisit only if needed).
 4. (Resolved 2026-11-17) Verified noreply email provided and configured for this repository only.
 5. (Partly resolved) Merge-commit email exposure (see Risks). USER-REPORTED: "Keep my email addresses private" and "Block command line pushes that expose my email" are enabled in the GitHub web UI (no screenshot in the repository). CLI-VERIFIED 2026-11-19: `gh api user/public_emails` returns `[]`, so the primary email is not publicly listed; the global and the repository-local Git `user.email` are both the GitHub noreply address. UNKNOWN: the state of the block-pushes toggle (needs the `user` token scope, which was not requested). Still open: leave commit 668a93e as is (recommended) or rewrite `main`; no rewrite has been approved.
+6. OPEN DOCUMENTATION REQUIREMENT, Part H (GitHub Copilot). Checklist rows H1-H7 stay Not started, and the evidence each one needs is listed in docs/REQUIREMENTS_CHECKLIST.md. CLI-VERIFIED 2026-11-19: no Copilot evidence exists in the repository (no docs/copilot or docs/failures directory, 0 workflows, 0 workflow runs). UNKNOWN: whether Copilot is enabled for the account. Timing: a Copilot origin cannot be shown afterwards, so the first workflow (the first CI workflow) must be created with Copilot when it is first written, with Copilot's unedited output committed before any manual edit. The evidence must be the user's own; nothing is written or reconstructed on the user's behalf.
 
 ## Manual actions log
 - 2026-11-17: Gitleaks 8.30.1 installed via winget (user-approved).

@@ -1,6 +1,6 @@
-# GitHub Setup (prepared in Phase 1 — nothing here has been executed)
+# GitHub Setup (partly executed, see Status)
 
-Status: instructions only. The repository has not been created and nothing has been pushed.
+Status: instructions, partly executed. CLI-verified 2026-11-19: the repository exists and is public, `main` and the feature branches have been pushed, and secret scanning and push protection are enabled (sections 2 and 3). CLI-verified 2026-11-19 as not done: branch protection (section 5), GitHub Environments (section 4), Actions secrets and variables. The other settings in section 3 were not checked against these instructions.
 Do not add any server IP, DNS name or URL to this file or any repository file (live URL pending
 instructor clarification).
 
@@ -55,7 +55,7 @@ Configure after the first CI run exists (Phase 3): GitHub can only select status
 have already reported. Settings -> Branches -> Add rule for `main`:
 - Require a pull request before merging
 - Require status checks to pass: select the CI jobs (frontend and backend, including both
-  Node 20 and 22 matrix entries) once they exist
+  Node 22 and 24 matrix entries) once they exist
 - Require branches to be up to date before merging
 - Require conversation resolution
 - Do not allow bypassing the above settings (include administrators)

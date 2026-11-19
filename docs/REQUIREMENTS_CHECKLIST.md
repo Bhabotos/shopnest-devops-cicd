@@ -30,7 +30,7 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 | C2 | M | Several jobs with correct dependencies | Not started | `needs` graph in run view | docs/screenshots/job-graph (pending) | pending |
 | C3 | M | Parallel execution of independent jobs | Not started | Frontend/backend jobs run concurrently in run view | docs/screenshots/job-graph (pending) | pending |
 | C4 | M | Build outputs passed between jobs | Not started | Artifact upload in CI, download in CD | Run artifacts (pending) | pending |
-| C5 | M | At least one job tests multiple runtime versions (Node 20 and 22) | Not started | Matrix shows both versions | docs/screenshots/matrix (pending) | pending |
+| C5 | M | At least one job tests multiple runtime versions (planned by us: Node 22 and 24, backend and frontend) | Not started | Matrix shows both versions | docs/screenshots/matrix (pending) | pending |
 | C6 | M | README diagram of workflows, jobs, steps, runners and relations | Not started | Review diagram against actual workflows | README.md (pending) | pending |
 
 ## Part D — Secrets and configuration management (10 marks; 0 if any credential in repo/history)
@@ -74,13 +74,13 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 ## Part H — Debugging and Copilot-assisted development (10 marks)
 | ID | Type | Requirement | Status | Validation method | Evidence location | Commit / Run |
 |---|---|---|---|---|---|---|
-| H1 | M | GitHub Copilot generates at least one workflow file | Not started | User's real Copilot session | docs/copilot/ (pending) | pending |
-| H2 | M | Prompts used are included | Not started | Actual prompts recorded verbatim | docs/copilot/ (pending) | pending |
-| H3 | M | Changes made to Copilot's output and why | Not started | Diff of Copilot output vs final | docs/copilot/ (pending) | pending |
-| H4 | M | At least 3 different kinds of deliberate pipeline failure | Not started | e.g. YAML syntax, test failure, deploy/connection failure | docs/failures/ (pending) | pending |
-| H5 | M | Per failure: error seen with screenshot of failed run | Not started | Screenshot per failure | docs/failures/ (pending) | pending |
-| H6 | M | Per failure: root-cause method incl. Copilot troubleshooting | Not started | Written analysis | docs/failures/ (pending) | pending |
-| H7 | M | Per failure: fix applied with link to commit | Not started | Commit link | docs/failures/ (pending) | pending |
+| H1 | M | GitHub Copilot generates at least one workflow file | Not started | User's real Copilot session. Required evidence: a screenshot or exported transcript of that session, and Copilot's unedited output committed before any manual edit (the first CI workflow, created with Copilot when it is first written) | docs/copilot/ (pending) | pending |
+| H2 | M | Prompts used are included | Not started | Actual prompts recorded verbatim. Required evidence: every prompt copied verbatim from the user's own session | docs/copilot/ (pending) | pending |
+| H3 | M | Changes made to Copilot's output and why | Not started | Diff of Copilot output vs final. Required evidence: commit links for the unedited output and for each later edit, with a written reason for each change | docs/copilot/ (pending) | pending |
+| H4 | M | At least 3 different kinds of deliberate pipeline failure | Not started | e.g. YAML syntax, test failure, deploy/connection failure. Required evidence: three different kinds, each shown by a failed Actions run that is kept and never deleted | docs/failures/ (pending) | pending |
+| H5 | M | Per failure: error seen with screenshot of failed run | Not started | Screenshot per failure. Required evidence: one screenshot of each failed run showing the error | docs/failures/ (pending) | pending |
+| H6 | M | Per failure: root-cause method incl. Copilot troubleshooting | Not started | Written analysis. Required evidence per failure: the error text, how the root cause was found, and the Copilot troubleshooting prompt and answer from the user's own session | docs/failures/ (pending) | pending |
+| H7 | M | Per failure: fix applied with link to commit | Not started | Commit link. Required evidence per failure: the link to the fix commit | docs/failures/ (pending) | pending |
 
 ## Part I — Documentation and repository quality (5 marks)
 | ID | Type | Requirement | Status | Validation method | Evidence location | Commit / Run |
@@ -88,7 +88,7 @@ Evidence root: `docs/` (screenshots in `docs/screenshots/`, failures in `docs/fa
 | I1 | M | README: overview, architecture diagram, setup instructions, pipeline explanation | Not started | Review against list | README.md (pending) | pending |
 | I2 | M | README: screenshots of successful and failed runs | Not started | Images resolve in repo | docs/screenshots/ (pending) | pending |
 | I3 | M | Clean, logical folder structure | Not started | Compare with planned layout | repo tree | pending |
-| I4 | M | Meaningful commit messages; branching workflow with PRs | In progress (public repo; PR #1 merged with a normal merge commit; PR #2 open; root commit plus 7 Conventional commits on docs/project-foundation and 3 on docs/post-merge-status as of c971105; CI-gated PR workflow not yet possible because no CI exists) | Review git log and PR list | PR #1 (merged) https://github.com/Bhabotos/shopnest-devops-cicd/pull/1; PR #2 (open) https://github.com/Bhabotos/shopnest-devops-cicd/pull/2; git log | eca306c, 615a338, fda914c, 2054e22, 2fd9fb6, f127deb, 0dd2454, e6e7cbc, merge 668a93e, 9683fdd, 5f054ac, c971105 |
+| I4 | M | Meaningful commit messages; branching workflow with PRs | In progress (public repo; PR #1 and PR #2 merged with normal merge commits; root commit plus 7 Conventional commits on docs/project-foundation and 4 on docs/post-merge-status; CI-gated PR workflow not yet possible because no CI exists) | Review git log and PR list | PR #1 (merged) https://github.com/Bhabotos/shopnest-devops-cicd/pull/1; PR #2 (merged) https://github.com/Bhabotos/shopnest-devops-cicd/pull/2; git log | eca306c, 615a338, fda914c, 2054e22, 2fd9fb6, f127deb, 0dd2454, e6e7cbc, merge 668a93e, 9683fdd, 5f054ac, c971105, 90825d7, merge 4d8f304 |
 | I5 | M | Anyone can reproduce the setup from the README alone | Not started | Dry-run read-through of README steps | README.md (pending) | pending |
 
 ## Submission rules

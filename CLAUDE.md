@@ -10,7 +10,7 @@ Automated CI/CD for ShopNest's three-tier app using GitHub Actions.
 - Data: PostgreSQL (Docker, internal network only)
 - Infra: one AWS EC2 instance, ap-south-1, provisioned with Terraform (our choice, not mandated)
 - Deploy: Docker + Docker Compose, Nginx reverse proxy, blue-green, health checks, auto rollback
-- Runtime matrix: Node.js 20 and 22 (never 18)
+- Runtime matrix: backend and frontend Node.js 22 and 24; local development on Node.js 24 (never 18 or 20)
 
 ## Hard rules (never violate)
 1. Never commit or print credentials, SSH keys, passwords, tokens, server IPs or hostnames.
