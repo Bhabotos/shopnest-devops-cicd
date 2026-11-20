@@ -1,0 +1,165 @@
+# Ad-hoc frontend verification of the quantity fix and API-supplied currency, run 2 (TEMPORARY spec, deleted after this run; NOT part of the suite; jsdom, not a browser)
+# run 1 is kept in adhoc-frontend-quantity-validation-run1-spec-errors.txt: 3 failures caused by errors in the spec itself (an <output> element with the status role, per-character typing of 1.5, USD rendered as $), not by the application
+# captured: 2026-11-20T03:41:54Z | node v24.15.0 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: npx vitest run test/zz-adhoc-quantity.test.jsx --reporter=verbose (frontend)
+
+
+ RUN  v5.1.1 D:/DevOps-Projects/shopnest-devops-cicd/frontend
+
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 1. clearing the field does not remove the line or change the quantity 132ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 2. clearing then typing 3 commits 3 104ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 3. above stock clamps to stock and shows the hint 94ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 3b. the per-line maximum of 20 applies when stock is larger 105ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 4. typing 0 clamps to 1 and does NOT remove the line 109ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 5. non-whole input changes nothing and blur restores the committed value 140ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 5b. blur on an empty field restores the committed value 62ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 6. only the Remove button removes a line 47ms
+ × test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 7. line total and cart total use the currency from the API data 7ms
+   → Unable to find an element with the text: /$2,469.12|$1,234.56/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <output
+      data-testid="state"
+    >
+      [[1,2]]
+    </output>
+    <section>
+      <h2>
+        Your cart
+      </h2>
+      <ul>
+        <li
+          class="line"
+        >
+          <span>
+            Nest Tee
+          </span>
+          <label>
+            Quantity for Nest Tee
+            <input
+              inputmode="numeric"
+              max="5"
+              min="1"
+              step="1"
+              type="number"
+              value="2"
+            />
+          </label>
+          <span>
+            $2,469.12
+          </span>
+          <button
+            type="button"
+          >
+            Remove 
+            Nest Tee
+          </button>
+        </li>
+      </ul>
+      <p
+        class="total"
+      >
+        Total: 
+        $2,469.12
+      </p>
+      <button
+        type="button"
+      >
+        Continue shopping
+      </button>
+      <button
+        type="button"
+      >
+        Proceed to checkout
+      </button>
+    </section>
+  </div>
+</body>
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 8. reducer ignores non-integer and unknown-product quantity actions 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 7. line total and cart total use the currency from the API data
+TestingLibraryElementError: Unable to find an element with the text: /$2,469.12|$1,234.56/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <output
+      data-testid="state"
+    >
+      [[1,2]]
+    </output>
+    <section>
+      <h2>
+        Your cart
+      </h2>
+      <ul>
+        <li
+          class="line"
+        >
+          <span>
+            Nest Tee
+          </span>
+          <label>
+            Quantity for Nest Tee
+            <input
+              inputmode="numeric"
+              max="5"
+              min="1"
+              step="1"
+              type="number"
+              value="2"
+            />
+          </label>
+          <span>
+            $2,469.12
+          </span>
+          <button
+            type="button"
+          >
+            Remove 
+            Nest Tee
+          </button>
+        </li>
+      </ul>
+      <p
+        class="total"
+      >
+        Total: 
+        $2,469.12
+      </p>
+      <button
+        type="button"
+      >
+        Continue shopping
+      </button>
+      <button
+        type="button"
+      >
+        Proceed to checkout
+      </button>
+    </section>
+  </div>
+</body>
+ ❯ Object.getElementError node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ test/zz-adhoc-quantity.test.jsx:83:19
+     81|   it('7. line total and cart total use the currency from the API data'…
+     82|     setup(product({ price: { amountMinor: 123456, currency: 'USD' } })…
+     83|     expect(screen.getAllByText(/$2,469.12|$1,234.56/).length).toBeGrea…
+       |                   ^
+     84|     expect(screen.queryByText(/BDT/)).not.toBeInTheDocument();
+     85|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 passed (10)
+   Start at  09:41:56
+   Duration  2.83s (environment 53%, tests 31%, setup 11%, import 4%, transform 2%)
+

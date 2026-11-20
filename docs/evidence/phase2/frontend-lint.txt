@@ -1,0 +1,9 @@
+# Frontend lint
+# captured: 2026-11-20T03:32:29Z | node v24.15.0 | npm 11.12.1 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: npm run lint (frontend)
+
+
+> shopnest-frontend@0.1.0 lint
+> eslint .
+
+exit=0

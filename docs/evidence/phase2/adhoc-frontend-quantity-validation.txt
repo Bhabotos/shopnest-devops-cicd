@@ -1,0 +1,24 @@
+# Ad-hoc frontend verification of the quantity fix and API-supplied currency, run 3 (TEMPORARY spec, deleted after this run; NOT part of the suite; jsdom, not a browser)
+# earlier runs kept: ...-run1-spec-errors.txt (3 spec errors) and ...-run2-spec-regex-error.txt (1 spec error: a regex mangled by string replacement). No run ever failed because of the application.
+# captured: 2026-11-20T03:42:07Z | node v24.15.0 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: npx vitest run test/zz-adhoc-quantity.test.jsx --reporter=verbose (frontend)
+
+
+ RUN  v5.1.1 D:/DevOps-Projects/shopnest-devops-cicd/frontend
+
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 1. clearing the field does not remove the line or change the quantity 93ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 2. clearing then typing 3 commits 3 90ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 3. above stock clamps to stock and shows the hint 87ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 3b. the per-line maximum of 20 applies when stock is larger 99ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 4. typing 0 clamps to 1 and does NOT remove the line 76ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 5. non-whole input changes nothing and blur restores the committed value 155ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 5b. blur on an empty field restores the committed value 78ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 6. only the Remove button removes a line 46ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 7. line total and cart total use the currency from the API data 3ms
+ ✓ test/zz-adhoc-quantity.test.jsx > adhoc quantity input > 8. reducer ignores non-integer and unknown-product quantity actions 0ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  09:42:09
+   Duration  2.72s (environment 52%, tests 29%, setup 13%, import 4%, transform 2%)
+

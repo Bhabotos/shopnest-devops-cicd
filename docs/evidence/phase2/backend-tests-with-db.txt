@@ -1,0 +1,52 @@
+# Backend tests WITH PostgreSQL 16.16 (disposable shopnest_test database, per-run schema)
+# captured: 2026-11-20T03:36:09Z | node v24.15.0 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: TEST_DATABASE_URL=<redacted> npx vitest run --reporter=verbose (backend)
+
+
+ RUN  v5.1.1 D:/DevOps-Projects/shopnest-devops-cicd/backend
+
+ ✓ test/logger.test.js > logger > writes one JSON object per line with time, level and message 4ms
+ ✓ test/logger.test.js > logger > includes extra fields 1ms
+ ✓ test/logger.test.js > logger > suppresses messages below the configured level 1ms
+ ✓ test/logger.test.js > logger > falls back to info for an unknown level 0ms
+ ✓ test/config.test.js > loadConfig > applies defaults when the environment is empty 3ms
+ ✓ test/config.test.js > loadConfig > reads values from the environment 1ms
+ ✓ test/config.test.js > loadConfig > falls back to the default for a non-numeric port 0ms
+ ✓ test/validation.test.js > orderSchema > accepts a valid order 5ms
+ ✓ test/validation.test.js > orderSchema > trims whitespace from customer fields 1ms
+ ✓ test/validation.test.js > orderSchema > rejects an invalid email 0ms
+ ✓ test/validation.test.js > orderSchema > rejects an empty item list 0ms
+ ✓ test/validation.test.js > orderSchema > rejects zero, negative, fractional and oversized quantities 1ms
+ ✓ test/validation.test.js > orderSchema > rejects a missing address 0ms
+ ✓ test/validation.test.js > id schemas > coerces numeric path ids and rejects junk 1ms
+ ✓ test/validation.test.js > id schemas > accepts only UUIDs for order ids 0ms
+ ✓ test/validation.test.js > mergeItems > sums quantities for repeated products 0ms
+ ✓ test/api.test.js > health and version > GET /health returns ok when the database answers 44ms
+ ✓ test/api.test.js > health and version > GET /health returns 503 when the database fails 8ms
+ ✓ test/api.test.js > health and version > GET /version reports the configured version and commit 5ms
+ ✓ test/api.test.js > products > GET /api/products maps rows to the public shape 5ms
+ ✓ test/api.test.js > products > GET /api/products/:id returns 404 for an unknown product 9ms
+ ✓ test/api.test.js > products > GET /api/products/:id returns 400 for a non-numeric id 6ms
+ ✓ test/api.test.js > orders > POST /api/orders rejects an invalid body with details 38ms
+ ✓ test/api.test.js > orders > POST /api/orders rejects malformed JSON 7ms
+ ✓ test/api.test.js > orders > GET /api/orders/:id rejects a non-UUID id 6ms
+ ✓ test/api.test.js > orders > GET /api/orders/:id returns 404 when the order does not exist 11ms
+ ✓ test/api.test.js > error handling > returns a JSON 404 for unknown routes 4ms
+ ✓ test/api.test.js > error handling > hides internal error details behind a generic 500 7ms
+ ✓ test/db.integration.test.js > database integration > migrations are idempotent 27ms
+ ✓ test/db.integration.test.js > database integration > seeding twice does not duplicate products or reset stock 37ms
+ ✓ test/db.integration.test.js > database integration > enforces non-negative stock and price at the database level 89ms
+ ✓ test/db.integration.test.js > database integration > lists seeded products over HTTP 54ms
+ ✓ test/db.integration.test.js > database integration > creates an order, totals it on the server and decrements stock 77ms
+ ✓ test/db.integration.test.js > database integration > merges repeated product lines into one 32ms
+ ✓ test/db.integration.test.js > database integration > returns 409 and changes nothing when stock is insufficient 31ms
+ ✓ test/db.integration.test.js > database integration > returns 422 for an unknown product 25ms
+ ✓ test/db.integration.test.js > database integration > never oversells under concurrent orders 194ms
+ ✓ test/db.integration.test.js > database integration > fetches a placed order back by id 128ms
+ ✓ test/db.integration.test.js > database integration > GET /health reports ok against a real database 26ms
+
+ Test Files  5 passed (5)
+      Tests  39 passed (39)
+   Start at  09:36:11
+   Duration  1.66s (import 49%, tests 45%, transform 3%, worker 2%)
+

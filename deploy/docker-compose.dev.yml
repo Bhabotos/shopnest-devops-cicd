@@ -1,0 +1,92 @@
+# Local development stack only. Production/staging Compose files come in a later phase.
+# Usage: copy .env.example to .env (same folder), set local passwords, then
+#   docker compose -f deploy/docker-compose.dev.yml up --build
+#
+# Three database roles:
+#   POSTGRES_USER (shopnest_admin)  bootstrap superuser: first-start init and the health check only
+#   shopnest_owner                  owns the schema; used by migrate and seed
+#   shopnest_app                    least privilege (explicit per-table grants); used by the API
+# Roles are created by deploy/db/init/01-roles.sh, which only runs on an EMPTY data volume.
+# After changing role settings, recreate the volume: docker compose -f deploy/docker-compose.dev.yml down -v
+name: shopnest-dev
+
+services:
+  db:
+    image: postgres:16.16-alpine3.24@sha256:1d5b02d3a9941fbd52437db4107f8c52d6297dac553ca1e5c299ebb3756b4857
+    environment:
+      POSTGRES_DB: shopnest
+      POSTGRES_USER: shopnest_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?set DB_OWNER_PASSWORD in deploy/.env}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?set DB_APP_PASSWORD in deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    # No "ports:" on purpose: the database is reachable only from the internal network.
+    healthcheck:
+      # TCP on purpose: during first-start initialisation the image runs a temporary server that
+      # listens on the Unix socket only. A socket check can report "ready" while migrate would
+      # still be refused over TCP; this one passes only when the real server accepts connections.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U shopnest_admin -d shopnest"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot job as the owner role: apply migrations only. It never seeds.
+  migrate:
+    build: ../backend
+    command: ["node", "scripts/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://shopnest_owner:${DB_OWNER_PASSWORD}@db:5432/shopnest
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    restart: "no"
+
+  # Development convenience only: load the demo catalogue (idempotent). The image sets
+  # NODE_ENV=production, which makes the seed script refuse to run, so this service opts in
+  # to "development". Production deployments must never include a service like this.
+  seed:
+    build: ../backend
+    command: ["node", "scripts/seed.js"]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://shopnest_owner:${DB_OWNER_PASSWORD}@db:5432/shopnest
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+
+  backend:
+    build: ../backend
+    environment:
+      DATABASE_URL: postgres://shopnest_app:${DB_APP_PASSWORD}@db:5432/shopnest
+      APP_VERSION: ${APP_VERSION:-dev}
+      GIT_SHA: ${GIT_SHA:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-3100}:3000"
+    networks: [internal, web]
+
+  frontend:
+    build: ../frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-8080}:8080"
+    networks: [web]
+
+networks:
+  internal:
+    internal: true
+  web: {}
+
+volumes:
+  pgdata:
