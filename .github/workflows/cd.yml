@@ -216,7 +216,23 @@ jobs:
           # The script starts the idle colour, validates /health and /version (must equal the SHA),
           # switches traffic only on success and, if the live check fails after the switch, returns
           # traffic to the previous release by itself (see bg_release in deploy/scripts/lib).
-          ssh "${ssh_opts[@]}" "$remote" "bash shopnest/incoming/${RELEASE_SHA}/deploy/scripts/bluegreen-deploy.sh --env ${DEPLOY_ENV} --sha ${RELEASE_SHA}"
+          # Exit 0: deployed. 1: failed, the previous release is serving. 3: failed AND the automatic
+          # rollback did not restore a verified release (critical). 255: SSH itself failed.
+          rc=0
+          ssh "${ssh_opts[@]}" "$remote" "bash shopnest/incoming/${RELEASE_SHA}/deploy/scripts/bluegreen-deploy.sh --env ${DEPLOY_ENV} --sha ${RELEASE_SHA}" || rc=$?
+          case "$rc" in
+            0) ;;
+            3)
+              echo "::error::CRITICAL: the deploy failed AND the automatic recovery did not restore a verified release; ${DEPLOY_ENV} may be serving a release that did not verify. Run release-status.sh on the server and read the log now."
+              echo "### CRITICAL: deploy failed and recovery failed (exit 3)" >> "$GITHUB_STEP_SUMMARY" ;;
+            255)
+              echo "::error::SSH to the server failed (exit 255); the deploy did not run to completion."
+              echo "### deploy did not run: SSH failed (exit 255)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *)
+              echo "::error::The deploy failed (exit ${rc}); the previous release is serving."
+              echo "### deploy failed (exit ${rc}); the previous release is serving" >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit "$rc"
       - name: Collect the deployment log
         # Only after SSH was opened; best effort, so a missing log never hides the real failure.
         if: always() && steps.ssh_open.outputs.rule_id != ''
@@ -351,7 +367,23 @@ jobs:
           # The script starts the idle colour, validates /health and /version (must equal the SHA),
           # switches traffic only on success and, if the live check fails after the switch, returns
           # traffic to the previous release by itself (see bg_release in deploy/scripts/lib).
-          ssh "${ssh_opts[@]}" "$remote" "bash shopnest/incoming/${RELEASE_SHA}/deploy/scripts/bluegreen-deploy.sh --env ${DEPLOY_ENV} --sha ${RELEASE_SHA}"
+          # Exit 0: deployed. 1: failed, the previous release is serving. 3: failed AND the automatic
+          # rollback did not restore a verified release (critical). 255: SSH itself failed.
+          rc=0
+          ssh "${ssh_opts[@]}" "$remote" "bash shopnest/incoming/${RELEASE_SHA}/deploy/scripts/bluegreen-deploy.sh --env ${DEPLOY_ENV} --sha ${RELEASE_SHA}" || rc=$?
+          case "$rc" in
+            0) ;;
+            3)
+              echo "::error::CRITICAL: the deploy failed AND the automatic recovery did not restore a verified release; ${DEPLOY_ENV} may be serving a release that did not verify. Run release-status.sh on the server and read the log now."
+              echo "### CRITICAL: deploy failed and recovery failed (exit 3)" >> "$GITHUB_STEP_SUMMARY" ;;
+            255)
+              echo "::error::SSH to the server failed (exit 255); the deploy did not run to completion."
+              echo "### deploy did not run: SSH failed (exit 255)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *)
+              echo "::error::The deploy failed (exit ${rc}); the previous release is serving."
+              echo "### deploy failed (exit ${rc}); the previous release is serving" >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit "$rc"
       - name: Collect the deployment log
         # Only after SSH was opened; best effort, so a missing log never hides the real failure.
         if: always() && steps.ssh_open.outputs.rule_id != ''

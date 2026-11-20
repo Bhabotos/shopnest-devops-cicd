@@ -12,7 +12,8 @@ name: Rollback
 # That script refuses a SHA that is not recorded as "deployed" in the environment's release history,
 # whose image label does not equal the SHA, or whose frontend files are gone; it then starts that
 # release on the idle colour, requires /health OK and /version == the SHA, and only then moves
-# traffic. It never runs migrations and never recreates the database.
+# traffic. It never runs migrations and never recreates the database. The job fails with a distinct message
+# when the recovery itself fails (exit 3) and removes its temporary tooling directory from the server.
 on:
   workflow_dispatch:
     inputs:
@@ -163,14 +164,33 @@ jobs:
           ssh_opts=(-i "$RUNNER_TEMP/deploy_key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15
                     -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
           remote="${EC2_USER}@${EC2_HOST}"
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::bad run id"; exit 1; }
           dir="shopnest/incoming/rollback-${GITHUB_RUN_ID}"
-          ssh "${ssh_opts[@]}" "$remote" "mkdir -p shopnest/incoming shopnest/logs && rm -rf ${dir}"
+          # The tooling directory is removed on every exit. The path is fixed text plus a validated number.
+          trap 'ssh "${ssh_opts[@]}" "$remote" "rm -rf -- ${dir}" || true' EXIT
+          ssh "${ssh_opts[@]}" "$remote" "mkdir -p shopnest/incoming shopnest/logs && rm -rf -- ${dir}"
           scp -q -r "${ssh_opts[@]}" tooling "${remote}:${dir}"
           # Read-only: what is live now and what the history says (SHAs and timestamps only, no secrets).
           ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/release-status.sh --env ${TARGET_ENV}"
           # rollback.sh validates the SHA and the image identity BEFORE any traffic moves.
-          ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/rollback.sh --env ${TARGET_ENV} --sha ${TARGET_SHA}"
-          ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/release-status.sh --env ${TARGET_ENV}" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Exit 0: rolled back. 1: failed, the previous release is serving. 3: failed AND recovery failed.
+          rc=0
+          ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/rollback.sh --env ${TARGET_ENV} --sha ${TARGET_SHA}" || rc=$?
+          # Best effort: show the resulting state even when the rollback failed.
+          ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/release-status.sh --env ${TARGET_ENV}" | tee -a "$GITHUB_STEP_SUMMARY" || true
+          case "$rc" in
+            0) ;;
+            3)
+              echo "::error::CRITICAL: the rollback failed AND the automatic recovery did not restore a verified release; ${TARGET_ENV} may be serving a release that did not verify. Run release-status.sh on the server and read the log now."
+              echo "### CRITICAL: rollback failed and recovery failed (exit 3)" >> "$GITHUB_STEP_SUMMARY" ;;
+            255)
+              echo "::error::SSH to the server failed (exit 255); the rollback did not run to completion."
+              echo "### rollback did not run: SSH failed (exit 255)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *)
+              echo "::error::The rollback failed (exit ${rc}); the previous release is serving."
+              echo "### rollback failed (exit ${rc}); the previous release is serving" >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit "$rc"
       - name: Collect the rollback log
         # Only after SSH was opened; best effort, so a missing log never hides the real failure.
         if: always() && steps.ssh_open.outputs.rule_id != ''
