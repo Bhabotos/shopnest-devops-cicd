@@ -50,7 +50,7 @@ Requires user approval in Phase 4 (IAM role / OIDC provider creation). Nothing i
 
 ## Pipelines
 - `ci.yml`: on push/PR to main. Parallel frontend & backend jobs (install -> lint -> test -> build).
-  The backend test job uses a Node.js version matrix: 20 and 22. Build outputs are uploaded as
+  The backend and frontend test jobs use a Node.js version matrix: 22 and 24. Build outputs are uploaded as
   artifacts and consumed by CD.
 - `cd.yml`: runs only after CI succeeds on main. Deploy staging -> validate -> production
   (GitHub Environment with required reviewers = manual approval).

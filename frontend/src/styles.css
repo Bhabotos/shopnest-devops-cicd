@@ -1,0 +1,13 @@
+:root { font-family: system-ui, sans-serif; color: #1c1c1c; }
+body { margin: 0; background: #f6f7f9; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; background: #fff; border-bottom: 1px solid #ddd; }
+main { max-width: 64rem; margin: 0 auto; padding: 1.5rem 2rem; }
+.grid { list-style: none; padding: 0; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+.card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+.card img { width: 100%; height: auto; border-radius: 4px; }
+.price, .total { font-weight: 600; }
+.line { display: flex; gap: 1rem; align-items: center; margin-bottom: 0.5rem; }
+form label { display: block; margin: 0.75rem 0 0.25rem; }
+form input, form textarea { display: block; width: 100%; max-width: 28rem; padding: 0.4rem; }
+[role='alert'] { color: #b00020; }
+button { margin: 0.5rem 0.5rem 0.5rem 0; padding: 0.45rem 0.9rem; cursor: pointer; }
