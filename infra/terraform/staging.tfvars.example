@@ -1,0 +1,40 @@
+# STAGING: cost-conscious (one application instance, single-AZ RDS). Copy to staging.tfvars (git-ignored) and adjust.
+# Nothing here is a secret. Use it only in the "staging" Terraform workspace:
+#   terraform workspace new staging      (once)
+#   terraform workspace select staging
+#   terraform plan -var-file=staging.tfvars
+#
+# NETWORK VALUES ARE DELIBERATELY NOT IN THIS FILE. Add these two to your own UNTRACKED staging.tfvars:
+#   vpc_cidr          a /16 IPv4 range for this stack's VPC; use a range that does not overlap production's
+#   alb_allowed_cidrs a list of the specific source addresses allowed to reach the staging ALB (open-to-the-world is refused)
+
+environment = "staging"
+
+# Matches deploy/env/staging.env.
+app_port = 8081
+
+# One instance, one target. Cost-conscious.
+# app_instance_count = 1 is the default for staging.
+instance_type       = "t3.small"
+root_volume_size_gb = 20
+
+# RDS: single-AZ, smallest class, short backups, clean teardown allowed.
+rds_engine_version           = "16"
+rds_instance_class           = "db.t4g.micro"
+rds_storage_type             = "gp3"
+rds_allocated_storage_gb     = 20
+rds_max_allocated_storage_gb = 50
+rds_multi_az                 = false
+rds_backup_retention_days    = 1
+rds_deletion_protection      = false
+rds_skip_final_snapshot      = true
+
+# One NAT Gateway: a staging cost optimisation and a single point of failure for outbound connectivity.
+nat_per_az = false
+
+# Runtime database secret the backend may read (created outside Terraform): shopnest/staging/db-app
+db_secret_names = ["db-app"]
+
+# ECR: shopnest/staging/backend
+ecr_repository_names = ["backend"]
+ecr_keep_images      = 30

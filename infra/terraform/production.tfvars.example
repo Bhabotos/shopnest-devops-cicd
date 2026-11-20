@@ -1,0 +1,42 @@
+# PRODUCTION-ORIENTED: two application instances in two Availability Zones, Multi-AZ RDS.
+# Copy to production.tfvars (git-ignored) and adjust. Nothing here is a secret. Use it only in the "production" workspace:
+#   terraform workspace new production      (once)
+#   terraform workspace select production
+#   terraform plan -var-file=production.tfvars
+#
+# NETWORK VALUES ARE DELIBERATELY NOT IN THIS FILE. Add these two to your own UNTRACKED production.tfvars:
+#   vpc_cidr          a /16 IPv4 range for this stack's VPC; use a range that does not overlap staging's
+#   alb_allowed_cidrs the sources allowed to reach the ALB (state the audience explicitly; the public web is a deliberate choice)
+# Without a domain and an ACM certificate (acm_certificate_arn) the ALB serves plain HTTP. Do not claim HTTPS before then.
+
+environment = "production"
+
+# Matches deploy/env/production.env.
+app_port = 80
+
+# Two instances, placed in different Availability Zones and both registered in the ALB target group (the production default).
+# app_instance_count = 2
+instance_type       = "t3.small"
+root_volume_size_gb = 20
+
+# RDS: Multi-AZ, protected, 7 days of backups, final snapshot on delete. Production cannot weaken these (checked).
+rds_engine_version           = "16"
+rds_instance_class           = "db.t4g.small"
+rds_storage_type             = "gp3"
+rds_allocated_storage_gb     = 50
+rds_max_allocated_storage_gb = 200
+rds_multi_az                 = true
+rds_backup_retention_days    = 7
+rds_deletion_protection      = true
+rds_skip_final_snapshot      = false
+
+# false = ONE NAT Gateway for both AZs: cheaper, but a single point of failure for outbound connectivity (Systems Manager,
+# ECR pulls, Secrets Manager). true = one per AZ. Open decision; see README.
+nat_per_az = false
+
+# Runtime database secret the backend may read (created outside Terraform): shopnest/production/db-app
+db_secret_names = ["db-app"]
+
+# ECR: shopnest/production/backend
+ecr_repository_names = ["backend"]
+ecr_keep_images      = 50
