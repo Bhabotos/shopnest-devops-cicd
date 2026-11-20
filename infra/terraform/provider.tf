@@ -4,6 +4,9 @@ provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
 
+  # Refuses any account that is not listed (from your untracked variable file). See also the non-root check on aws_vpc.
+  allowed_account_ids = var.allowed_account_ids
+
   default_tags {
     tags = {
       Project     = var.project

@@ -35,6 +35,15 @@ resource "aws_instance" "app" {
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {})
 
+  # The boot script needs outbound internet (apt, snap, the RDS CA bundle) as soon as it starts, and the Systems Manager agent needs
+  # its permissions. Nothing in the arguments above orders the instance after them, so state it explicitly: the route table
+  # association (whose route points at the NAT Gateway) and the NAT Gateway itself must exist first. (TF-01)
+  depends_on = [
+    aws_nat_gateway.main,
+    aws_route_table_association.app,
+    aws_iam_role_policy_attachment.ssm_core,
+  ]
+
   metadata_options {
     http_endpoint = "enabled"
     http_tokens   = "required" # IMDSv2 only
@@ -71,6 +80,11 @@ resource "aws_instance" "app" {
 
 # ---- application load balancer --------------------------------------------------------------------------------------
 
+locals {
+  # Production's entry point is protected by default; staging can be torn down. Set the variable to false to decommission production.
+  alb_deletion_protection = var.enable_deletion_protection == null ? var.environment == "production" : var.enable_deletion_protection
+}
+
 resource "aws_lb" "main" {
   name               = "${local.name}-alb"
   load_balancer_type = "application"
@@ -79,7 +93,7 @@ resource "aws_lb" "main" {
   subnets            = [for s in aws_subnet.public : s.id]
 
   drop_invalid_header_fields = true
-  enable_deletion_protection = var.enable_deletion_protection
+  enable_deletion_protection = local.alb_deletion_protection
 
   tags = { Name = "${local.name}-alb" }
 

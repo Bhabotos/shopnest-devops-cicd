@@ -29,6 +29,16 @@ variable "aws_region" {
   }
 }
 
+variable "allowed_account_ids" {
+  description = "AWS account ID(s) this configuration may be applied to. Required, no default, and never in a tracked file: put it in your own untracked variable file. The provider refuses any other account, which protects against a wrong profile or the wrong credentials (TF-03)."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.allowed_account_ids) >= 1 && alltrue([for id in var.allowed_account_ids : can(regex("^[0-9]{12}$", id))])
+    error_message = "allowed_account_ids must list at least one 12-digit AWS account ID."
+  }
+}
+
 variable "aws_profile" {
   description = "AWS CLI profile to use. Never root credentials, never access keys in code."
   type        = string
@@ -59,9 +69,9 @@ variable "az_count" {
 }
 
 variable "nat_per_az" {
-  description = "false (default): ONE NAT Gateway in the first Availability Zone serves every private subnet. That is a cost optimisation and a SINGLE POINT OF FAILURE for outbound connectivity (Systems Manager, ECR image pulls, Secrets Manager, packages): if that AZ fails, instances in the other AZ keep serving traffic through the ALB but cannot make outbound calls. true: one NAT Gateway per AZ, each AZ routes through its own (roughly doubles the NAT cost)."
+  description = "One NAT Gateway per Availability Zone, with each AZ's private subnet routing through the gateway in its own AZ (no cross-AZ NAT routing). null means: true for production, false for staging. With false there is ONE gateway, in the first AZ, serving every private subnet: a cost optimisation that is also a SINGLE POINT OF FAILURE for outbound connectivity (Systems Manager, ECR pulls, Secrets Manager, packages). Production cannot use false (checked)."
   type        = bool
-  default     = false
+  default     = null
 }
 
 # ---- application instance + load balancer ------------------------------------------------------------------------------
@@ -81,6 +91,11 @@ variable "instance_type" {
   description = "EC2 type for each application instance (nginx + backend blue/green containers; no database)."
   type        = string
   default     = "t3.small"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]*\\.[a-z0-9]+$", var.instance_type))
+    error_message = "instance_type must look like t3.small."
+  }
 }
 
 variable "imds_hop_limit" {
@@ -115,12 +130,22 @@ variable "app_port" {
   description = "Host port of this environment's nginx on the instance (matches deploy/env/<environment>.env: 80 for production, 8081 for staging). The ALB forwards to it."
   type        = number
   default     = 80
+
+  validation {
+    condition     = var.app_port >= 1 && var.app_port <= 65535 && !contains([22, 5432], var.app_port)
+    error_message = "app_port must be between 1 and 65535 and must not be 22 or 5432."
+  }
 }
 
 variable "alb_allowed_cidrs" {
-  description = "Source CIDRs allowed to reach the load balancer. Required, no default, and never in a tracked file: put it in your own untracked variable file. Production states its audience explicitly; staging must list specific addresses (open-to-the-world is refused for staging)."
+  description = "Source CIDRs allowed to reach the load balancer. Required, no default, and never in a tracked file: put it in your own untracked variable file. Production states its audience explicitly; staging must list specific addresses (open-to-the-world is refused for staging). IPv4 only."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for c in var.alb_allowed_cidrs : can(cidrhost(c, 0)) && can(regex("^[0-9.]+/[0-9]+$", c))])
+    error_message = "Every alb_allowed_cidrs entry must be an IPv4 CIDR such as a /32 or /24 range (IPv6 and empty values are rejected)."
+  }
 }
 
 variable "acm_certificate_arn" {
@@ -130,9 +155,9 @@ variable "acm_certificate_arn" {
 }
 
 variable "enable_deletion_protection" {
-  description = "ALB deletion protection. Off by default so assignment infrastructure can be torn down; turn on for anything long-lived."
+  description = "ALB deletion protection. null means: on for production, off for staging so assignment infrastructure can be torn down. To decommission production, set this to false first."
   type        = bool
-  default     = false
+  default     = null
 }
 
 # ---- RDS PostgreSQL ------------------------------------------------------------------------------------------------------
@@ -167,13 +192,13 @@ variable "rds_instance_class" {
 }
 
 variable "rds_storage_type" {
-  description = "Storage type: gp3 (default), gp2 or io1."
+  description = "Storage type: gp3 (default) or gp2. io1 is not offered because no provisioned-IOPS setting exists in this configuration."
   type        = string
   default     = "gp3"
 
   validation {
-    condition     = contains(["gp3", "gp2", "io1"], var.rds_storage_type)
-    error_message = "rds_storage_type must be gp3, gp2 or io1."
+    condition     = contains(["gp3", "gp2"], var.rds_storage_type)
+    error_message = "rds_storage_type must be gp3 or gp2."
   }
 }
 
@@ -189,9 +214,14 @@ variable "rds_allocated_storage_gb" {
 }
 
 variable "rds_max_allocated_storage_gb" {
-  description = "Upper limit for storage autoscaling in GiB; null turns autoscaling off."
+  description = "Upper limit for storage autoscaling in GiB; null turns autoscaling off. Must be greater than rds_allocated_storage_gb. Terraform ignores later changes to the allocated size (autoscaling moves it)."
   type        = number
   default     = null
+
+  validation {
+    condition     = var.rds_max_allocated_storage_gb == null || var.rds_max_allocated_storage_gb > var.rds_allocated_storage_gb
+    error_message = "rds_max_allocated_storage_gb must be greater than rds_allocated_storage_gb (or null to disable autoscaling)."
+  }
 }
 
 variable "rds_storage_kms_key_id" {
@@ -201,9 +231,9 @@ variable "rds_storage_kms_key_id" {
 }
 
 variable "rds_multi_az" {
-  description = "Run a synchronous standby in a second Availability Zone with automatic failover. Roughly doubles the instance and storage cost; see README."
+  description = "Run a synchronous standby in a second Availability Zone with automatic failover. null means: on for production, off for staging. Production cannot turn it off (checked). Roughly doubles instance and storage cost; see README."
   type        = bool
-  default     = false
+  default     = null
 }
 
 variable "rds_backup_retention_days" {
@@ -239,6 +269,25 @@ variable "rds_skip_final_snapshot" {
   description = "Skip the final snapshot when the instance is deleted. Production cannot skip it (checked); staging may, to allow a clean teardown."
   type        = bool
   default     = false
+}
+
+variable "rds_final_snapshot_suffix" {
+  description = "Suffix of the final snapshot name (<project>-<environment>-final-<suffix>). A snapshot name can be used only once, so change this value (for example to 2) before deleting and recreating a database that already left a final snapshot behind. Allowed: letters and digits, with single hyphens between groups (for example 1, 2, final2 or 2026-11). Not allowed: an empty value, other characters, a leading or trailing hyphen, or two hyphens in a row. The complete name must not exceed 255 characters."
+  type        = string
+  default     = "1"
+
+  # AWS RDS rules for a final DB snapshot identifier (DeleteDBInstance, FinalDBSnapshotIdentifier): 1 to 255 characters; letters, digits
+  # and hyphens; the first character must be a letter; it cannot end with a hyphen or contain two consecutive hyphens. The name here
+  # starts with the project name, so the first-character rule is checked on the complete name (precondition on aws_db_instance.main).
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$", var.rds_final_snapshot_suffix))
+    error_message = "rds_final_snapshot_suffix must be one or more letters or digits, with single hyphens only between groups (no leading or trailing hyphen, no two hyphens in a row, no other characters)."
+  }
+
+  validation {
+    condition     = length("${var.project}-${var.environment}-final-${var.rds_final_snapshot_suffix}") <= 255
+    error_message = "The complete final snapshot identifier (<project>-<environment>-final-<suffix>) must not exceed 255 characters, the RDS limit."
+  }
 }
 
 variable "rds_apply_immediately" {
@@ -309,4 +358,45 @@ variable "ecr_kms_key_arn" {
   description = "Optional customer-managed KMS key for ECR encryption. null uses AES-256 service-managed encryption (images are encrypted at rest either way)."
   type        = string
   default     = null
+}
+
+# ---- deployment artifact bucket -----------------------------------------------------------------------------------------
+
+variable "artifact_prefix" {
+  description = "Key prefix inside the deployment artifact bucket where scripts and configuration are stored. The instance role can read only this prefix."
+  type        = string
+  default     = "deploy/"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*/$", var.artifact_prefix))
+    error_message = "artifact_prefix must be a path ending in a slash, for example deploy/."
+  }
+}
+
+variable "artifacts_kms_key_arn" {
+  description = "Optional customer-managed KMS key for the artifact bucket. null uses S3-managed AES-256 encryption (every object is encrypted at rest either way). When set, the instance role may decrypt with it through S3 only."
+  type        = string
+  default     = null
+}
+
+variable "artifact_noncurrent_retention_days" {
+  description = "Days an overwritten or deleted object version is kept before it expires. Versioning keeps older releases of scripts available for rollback within this window."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.artifact_noncurrent_retention_days >= 7
+    error_message = "artifact_noncurrent_retention_days must be at least 7."
+  }
+}
+
+variable "artifact_noncurrent_versions_kept" {
+  description = "How many of the newest noncurrent versions of each object are always kept, whatever their age."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.artifact_noncurrent_versions_kept >= 1
+    error_message = "artifact_noncurrent_versions_kept must be at least 1."
+  }
 }

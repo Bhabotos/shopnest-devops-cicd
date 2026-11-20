@@ -89,6 +89,31 @@ output "nat_gateway_count" {
   value       = length(aws_nat_gateway.main)
 }
 
+output "nat_gateway_ids" {
+  description = "NAT Gateway IDs by the Availability Zone they live in."
+  value       = { for az, n in aws_nat_gateway.main : az => n.id }
+}
+
+output "app_subnet_nat_az" {
+  description = "For each Availability Zone, the AZ whose NAT Gateway its application subnet routes through. Production: every AZ maps to itself (no cross-AZ NAT routing)."
+  value       = local.nat_az_for_az
+}
+
+output "artifact_bucket_name" {
+  description = "Deployment artifact bucket (scripts and configuration). Empty until applied; nothing is uploaded by Terraform."
+  value       = aws_s3_bucket.artifacts.bucket
+}
+
+output "artifact_bucket_arn" {
+  description = "ARN of the deployment artifact bucket."
+  value       = aws_s3_bucket.artifacts.arn
+}
+
+output "artifact_prefix" {
+  description = "Key prefix the instance role may read."
+  value       = var.artifact_prefix
+}
+
 output "ecr_repository_urls" {
   description = "Repository URLs by name (registry host plus repository). CI pushes here; the instances pull from here."
   value       = { for k, r in aws_ecr_repository.app : k => r.repository_url }

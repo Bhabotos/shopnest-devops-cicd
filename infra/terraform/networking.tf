@@ -19,9 +19,14 @@ locals {
   app_subnets    = { for i, az in local.azs : az => cidrsubnet(var.vpc_cidr, 8, 10 + i) }
   db_subnets     = { for i, az in local.azs : az => cidrsubnet(var.vpc_cidr, 8, 20 + i) }
 
-  # The first AZ always has a NAT Gateway. With nat_per_az every AZ has its own; otherwise this one serves all of them.
+  # The first AZ always has a NAT Gateway. With nat_per_az every AZ has its own, and each AZ routes through its OWN gateway;
+  # otherwise the one gateway serves all of them. Production defaults to one per AZ, staging to one in total.
   primary_az = local.azs[0]
-  nat_azs    = var.nat_per_az ? local.azs : [local.primary_az]
+  nat_per_az = var.nat_per_az == null ? var.environment == "production" : var.nat_per_az
+  nat_azs    = local.nat_per_az ? local.azs : [local.primary_az]
+
+  # Which AZ's NAT Gateway each AZ's application subnet uses. With nat_per_az every AZ maps to itself (no cross-AZ NAT routing).
+  nat_az_for_az = { for az in local.azs : az => local.nat_per_az ? az : local.primary_az }
 
   # Application capacity: 1 instance for staging, 2 for production unless overridden. Placement is round-robin across the AZs.
   app_instance_count = var.app_instance_count != null ? var.app_instance_count : (var.environment == "production" ? 2 : 1)
@@ -38,6 +43,10 @@ resource "aws_vpc" "main" {
   lifecycle {
     # Staging and production are separate states (workspaces). Applying one environment's variables to the
     # other's state would try to rebuild its network, so the workspace name must equal the environment.
+    precondition {
+      condition     = !endswith(data.aws_caller_identity.current.arn, ":root")
+      error_message = "Refusing to run as the AWS root user. Use the short-lived 'devops' profile (never root credentials)."
+    }
     precondition {
       condition     = terraform.workspace == var.environment
       error_message = "Select the matching Terraform workspace first: 'terraform workspace select ${var.environment}' (create it once with 'terraform workspace new ${var.environment}')."
@@ -94,8 +103,12 @@ resource "aws_subnet" "db" {
 }
 
 # ---- NAT Gateway(s) (the selected way for private subnets to reach the internet; cost: see README) --------------------------
-# One per entry in local.nat_azs. With nat_per_az = false this is a SINGLE gateway: a cost optimisation that is also a single
-# point of failure for outbound connectivity. It is not multi-AZ NAT.
+# One per entry in local.nat_azs.
+#  - production (default): one gateway per AZ, and each AZ's application subnet routes through the gateway in its own AZ, so the
+#    loss of one AZ does not remove outbound connectivity (Systems Manager, ECR, Secrets Manager) from the other. Cost: one more
+#    gateway and Elastic IP (see README).
+#  - staging (default): ONE gateway, a cost optimisation and a single point of failure for outbound connectivity. It is not
+#    multi-AZ NAT, and it is not claimed to be.
 
 resource "aws_eip" "nat" {
   for_each = toset(local.nat_azs)
@@ -112,9 +125,16 @@ resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat[each.key].id
   subnet_id     = aws_subnet.public[each.key].id
 
-  tags = { Name = "${local.name}-nat-${each.key}" }
+  tags = { Name = "${local.name}-nat-${each.key}", Az = each.key }
 
   depends_on = [aws_internet_gateway.main]
+
+  lifecycle {
+    precondition {
+      condition     = var.environment != "production" || local.nat_per_az
+      error_message = "Production needs one NAT Gateway per Availability Zone (nat_per_az = true)."
+    }
+  }
 }
 
 # ---- route tables ------------------------------------------------------------------------------
@@ -138,7 +158,7 @@ resource "aws_route_table_association" "public" {
 }
 
 # Application subnets: outbound only, through a NAT Gateway. No inbound path from the internet.
-# One route table per AZ so each AZ can use its own NAT Gateway when nat_per_az is true; otherwise all use the single one.
+# One route table per AZ: with nat_per_az each AZ uses the NAT Gateway in its own AZ; otherwise all use the single one.
 resource "aws_route_table" "app" {
   for_each = toset(local.azs)
 
@@ -146,10 +166,10 @@ resource "aws_route_table" "app" {
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main[var.nat_per_az ? each.key : local.primary_az].id
+    nat_gateway_id = aws_nat_gateway.main[local.nat_az_for_az[each.key]].id
   }
 
-  tags = { Name = "${local.name}-app-rt-${each.key}" }
+  tags = { Name = "${local.name}-app-rt-${each.key}", NatAz = local.nat_az_for_az[each.key] }
 }
 
 resource "aws_route_table_association" "app" {

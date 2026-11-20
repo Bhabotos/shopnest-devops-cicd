@@ -6,8 +6,9 @@ data "aws_partition" "current" {}
 #   1. register with Systems Manager (AmazonSSMManagedInstanceCore): how operators and the deploy workflow reach them,
 #      with no inbound port;
 #   2. pull images from THIS environment's ECR repositories (read-only), using the instance role: no access keys on the host;
-#   3. read the specific database secret(s) named in db_secret_names (GetSecretValue), for the backend's AWS SDK.
-# It may NOT push images, read the RDS-managed master secret or any other secret, and has no S3, EC2 or IAM permissions.
+#   3. read the specific database secret(s) named in db_secret_names (GetSecretValue), for the backend's AWS SDK;
+#   4. read (never write) the deployment artifact prefix of THIS environment's bucket.
+# It may NOT push images, read the RDS-managed master secret or any other secret, write to S3, or use EC2 or IAM.
 data "aws_iam_policy_document" "ec2_assume" {
   statement {
     effect  = "Allow"
@@ -96,6 +97,55 @@ resource "aws_iam_role_policy" "app_secrets" {
   policy = data.aws_iam_policy_document.app_secrets.json
 }
 
+# Read-only access to the deployment artifact prefix (scripts and configuration), nothing else in the bucket. The instance cannot
+# write, delete or list outside the prefix. When the bucket uses a customer-managed key the role may decrypt with it, through S3 only.
+data "aws_iam_policy_document" "artifacts_read" {
+  statement {
+    sid    = "ReadArtifactPrefix"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+    ]
+    resources = ["${aws_s3_bucket.artifacts.arn}/${var.artifact_prefix}*"]
+  }
+
+  statement {
+    sid       = "ListArtifactPrefix"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.artifacts.arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["${var.artifact_prefix}*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.artifacts_kms_key_arn == null ? [] : [var.artifacts_kms_key_arn]
+    content {
+      sid       = "DecryptArtifacts"
+      effect    = "Allow"
+      actions   = ["kms:Decrypt"]
+      resources = [statement.value]
+
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["s3.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "artifacts_read" {
+  name   = "read-deployment-artifacts"
+  role   = aws_iam_role.instance.id
+  policy = data.aws_iam_policy_document.artifacts_read.json
+}
+
 resource "aws_iam_instance_profile" "instance" {
   name = "${local.name}-instance"
   role = aws_iam_role.instance.name
@@ -105,4 +155,5 @@ resource "aws_iam_instance_profile" "instance" {
 #  - the GitHub OIDC provider and the deploy role (ecr:PutImage and friends for CI; ssm:SendCommand on these instances and
 #    one document for the deploy workflow). The trust policy needs the repository's real OIDC `sub` claim, which has not been
 #    captured (docs/OIDC_DESIGN.md, open item 2a). It is a separate, approved change; the minimum permissions are in README.
+#  - the artifact PUBLISHER permission (PutObject on the artifact prefix): it belongs to the CI/deploy identity, which does not exist yet.
 #  - the database secrets (shopnest/<environment>/<name>): created out-of-band so their values never enter Terraform state.

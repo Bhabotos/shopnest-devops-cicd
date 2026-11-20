@@ -1,12 +1,13 @@
-# STAGING: cost-conscious (one application instance, single-AZ RDS). Copy to staging.tfvars (git-ignored) and adjust.
-# Nothing here is a secret. Use it only in the "staging" Terraform workspace:
+# STAGING: cost-conscious (one application instance, single-AZ RDS, one NAT Gateway). Copy to staging.tfvars (git-ignored)
+# and adjust. Nothing here is a secret. Use it only in the "staging" Terraform workspace:
 #   terraform workspace new staging      (once)
 #   terraform workspace select staging
 #   terraform plan -var-file=staging.tfvars
 #
-# NETWORK VALUES ARE DELIBERATELY NOT IN THIS FILE. Add these two to your own UNTRACKED staging.tfvars:
-#   vpc_cidr          a /16 IPv4 range for this stack's VPC; use a range that does not overlap production's
-#   alb_allowed_cidrs a list of the specific source addresses allowed to reach the staging ALB (open-to-the-world is refused)
+# THREE VALUES ARE DELIBERATELY NOT IN THIS FILE. Add them to your own UNTRACKED staging.tfvars:
+#   allowed_account_ids  the AWS account ID(s) this stack may be applied to; the provider refuses any other account
+#   vpc_cidr             a /16 IPv4 range for this stack's VPC; use a range that does not overlap production's
+#   alb_allowed_cidrs    a list of the specific source addresses allowed to reach the staging ALB (open-to-the-world is refused)
 
 environment = "staging"
 
@@ -28,9 +29,14 @@ rds_multi_az                 = false
 rds_backup_retention_days    = 1
 rds_deletion_protection      = false
 rds_skip_final_snapshot      = true
+# Used only if rds_skip_final_snapshot is false: change it before deleting and recreating a database.
+# rds_final_snapshot_suffix = "1"
 
-# One NAT Gateway: a staging cost optimisation and a single point of failure for outbound connectivity.
+# ONE NAT Gateway: a staging cost optimisation and a single point of failure for outbound connectivity (not multi-AZ NAT).
 nat_per_az = false
+
+# ALB deletion protection: null (the default) means off for staging.
+# enable_deletion_protection = false
 
 # Runtime database secret the backend may read (created outside Terraform): shopnest/staging/db-app
 db_secret_names = ["db-app"]
@@ -38,3 +44,8 @@ db_secret_names = ["db-app"]
 # ECR: shopnest/staging/backend
 ecr_repository_names = ["backend"]
 ecr_keep_images      = 30
+
+# Deployment artifact bucket (scripts and configuration, read-only for the instance; nothing is uploaded by Terraform).
+# artifact_prefix                    = "deploy/"
+# artifact_noncurrent_retention_days = 90
+# artifact_noncurrent_versions_kept  = 5
