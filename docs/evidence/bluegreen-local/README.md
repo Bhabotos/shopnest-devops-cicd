@@ -20,8 +20,14 @@ by the rehearsal. They are not commits of this repository. Each one labels a loc
 | 1 | Full scenario | **Failed** at deploy A: Windows cannot hold mode 600 on `secrets.env`, and the script rightly refused. Kept as failed-run evidence | `attempt1-failed-secrets-mode600/` |
 | 2 | Full scenario, with the loose-secrets override authorised for that one run | **Failed**: during deploy B, 1 of 213 requests failed (HTTP 500 plus a 2.5 s stall) because deploy B recreated the database container. The run stopped there. Led to the `--no-recreate` and stable-mount fixes | `attempt2/` |
 | 3 | Full scenario | **Passed 12 of 12**: A live, B deployed while requests flowed (238 of 238 HTTP 200), broken release C rejected before any traffic moved (107 of 107), manual rollback to A (161 of 161), database container never recreated | `attempt3/` |
-| 4 | `--scenario post-switch` | **Passed 9 of 9**: release D passed the pre-switch checks, traffic moved, the live check failed, and the **automatic rollback** put A back and stopped D. The database was never recreated. **Requests to `/` failed while D was live: 83 of 181** (about 20 s). The failure window is recorded, not hidden | `attempt4-post-switch-rollback/` |
+| 4 | `--scenario post-switch` **as it was at commit `6d186e5`** (see the note below) | **Passed 9 of 9**: release D passed the pre-switch checks, traffic moved, the live check failed, and the **automatic rollback** put A back and stopped D. The database was never recreated. **Requests to `/` failed while D was live: 83 of 181** (about 20 s). The failure window is recorded, not hidden | `attempt4-post-switch-rollback/` |
 | 5 | `--scenario all`, after the fix described in `attempt4-failure-analysis.md` | **Passed 24 of 24.** Steps 1-4 again (loops 269/269, 176/176, 180/180 HTTP 200). Step 5: release D with no `index.html` is **refused before anything changes** (exit 1); loops on `/` (105) and `/api/products` (108): **0 failed**. Step 6: release E is good, then its `index.html` is deleted right after the switch by the harness; the live check fails, the automatic rollback restores A (exit 1). **79 of 171 requests to `/` failed (about 20 s)**; nginx's own log shows `rewrite or internal redirection cycle ... "/index.html"` | `attempt5-all-scenarios/` |
+
+**Historical note on attempt 4.** Attempt 4 was run with the rehearsal script as it was at commit `6d186e5`. In that
+version `--scenario post-switch` deployed release D, whose frontend files had **no `index.html`**, and nothing checked the frontend
+before the switch. The current script names that case `frontend-missing` (it is now refused before anything changes), and the
+current `--scenario post-switch` is a different scenario: release E is good, and the harness deletes its `index.html` right after the
+switch to inject a fault. The attempt 4 logs and results are unchanged; see `attempt4-failure-analysis.md` for what they show.
 
 Attempt 4 shows that a failure *after* the switch is detected and reversed automatically. It also shows
 that this case is **not** zero-impact: until the live check fails and traffic returns, users of the
