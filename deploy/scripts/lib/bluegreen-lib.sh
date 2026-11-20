@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+# Shared functions for bluegreen-deploy.sh and rollback.sh. Source it; do not execute it.
+# Design: docs/ARCHITECTURE.md, "Deployment & rollback".
+#
+# Layout on the server (per environment, under $SHOPNEST_HOME, default ~/shopnest):
+#   <env>/secrets.env           database passwords, created by the operator, mode 600, never in git
+#   <env>/state/active          blue or green: the colour that receives traffic
+#   <env>/state/tag-blue|green  release SHA running (or last run) on that colour
+#   <env>/state/last_good       SHA of the last release that passed live verification
+#   <env>/state/history.log     "<utc> <env> <sha> <status> <detail>", appended, never rewritten
+#   <env>/nginx/upstream/       active.conf (backend colour + frontend release), swapped atomically
+#   <env>/frontend/releases/    one directory of static files per release SHA
+#   logs/<env>-<sha>.log        deployment log (the CD workflow uploads it as an artifact)
+
+bg_log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+bg_die() { bg_log "ERROR: $*" >&2; exit 1; }
+
+bg_require_sha() { [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]] || bg_die "release must be a full 40-character commit SHA"; }
+
+# bg_init <staging|production> <bundle dir that contains deploy/>
+bg_init() {
+  BG_ENV="${1:-}"
+  BG_RELEASE_DIR="${2:-}"
+  case "$BG_ENV" in staging | production) ;; *) bg_die "environment must be staging or production" ;; esac
+  [ -f "$BG_RELEASE_DIR/deploy/docker-compose.prod.yml" ] || bg_die "no deploy/docker-compose.prod.yml in $BG_RELEASE_DIR"
+
+  BG_BASE_DIR="${SHOPNEST_HOME:-$HOME/shopnest}"
+  BG_ENV_DIR="$BG_BASE_DIR/$BG_ENV"
+  BG_STATE_DIR="$BG_ENV_DIR/state"
+  BG_UPSTREAM_DIR="$BG_ENV_DIR/nginx/upstream"
+  BG_FRONTEND_DIR="$BG_ENV_DIR/frontend"
+  BG_LOG_DIR="$BG_BASE_DIR/logs"
+  # The prefix and the port can be overridden so a local rehearsal never touches a real environment.
+  BG_PROJECT="${SHOPNEST_PROJECT_PREFIX:-shopnest}-$BG_ENV"
+  BG_COMPOSE_FILE="$BG_RELEASE_DIR/deploy/docker-compose.prod.yml"
+  mkdir -p "$BG_STATE_DIR" "$BG_UPSTREAM_DIR" "$BG_FRONTEND_DIR/releases" "$BG_LOG_DIR"
+
+  local secrets="$BG_ENV_DIR/secrets.env" key value
+  [ -f "$secrets" ] || bg_die "missing $secrets (create it on the server; see docs/ARCHITECTURE.md)"
+  if [ "${BG_ALLOW_LOOSE_SECRETS:-}" = "1" ]; then
+    # Only for a local rehearsal on a filesystem that cannot hold mode 600 (Windows). Refused unless the
+    # stack is plainly not a real environment: a project prefix other than "shopnest" (so it can never be
+    # shopnest-staging or shopnest-production) and a loopback-only bind.
+    if [ -z "${SHOPNEST_PROJECT_PREFIX:-}" ] || [ "$SHOPNEST_PROJECT_PREFIX" = "shopnest" ] || [ "${HTTP_BIND:-}" != "127.0.0.1" ]; then
+      bg_die "BG_ALLOW_LOOSE_SECRETS=1 is for local rehearsals only: it needs SHOPNEST_PROJECT_PREFIX set to something other than 'shopnest' and HTTP_BIND=127.0.0.1; it is never allowed for $BG_PROJECT"
+    fi
+    bg_log "WARNING: BG_ALLOW_LOOSE_SECRETS=1, the secrets file mode is not checked (local rehearsal $BG_PROJECT)"
+  elif [ "$(stat -c '%a' "$secrets")" != "600" ]; then
+    bg_die "$secrets must have mode 600"
+  fi
+  [ -f "$BG_RELEASE_DIR/deploy/env/$BG_ENV.env" ] || bg_die "missing deploy/env/$BG_ENV.env in the bundle"
+  set -a
+  # shellcheck disable=SC1090
+  . "$BG_RELEASE_DIR/deploy/env/$BG_ENV.env"
+  # shellcheck disable=SC1090
+  . "$secrets"
+  set +a
+  if [ -n "${SHOPNEST_HTTP_PORT:-}" ]; then HTTP_PORT="$SHOPNEST_HTTP_PORT"; export HTTP_PORT; fi
+  for key in POSTGRES_PASSWORD DB_OWNER_PASSWORD DB_APP_PASSWORD; do
+    value="${!key:-}"
+    [[ "$value" =~ ^[A-Za-z0-9]{16,}$ ]] || bg_die "$key in secrets.env must be 16 or more letters and digits"
+  done
+  export ENV_DIR="$BG_ENV_DIR"
+  bg_stage_config
+  bg_export_tags
+}
+
+# Everything a container mounts from the host lives at a STABLE path under the environment directory.
+# If a service mounted a path inside the release bundle, its definition would change with every
+# release and Compose would recreate it; for the database that is a restart in the middle of a live
+# deploy (found by the first real-Docker rehearsal: one failed request and a 2.5 s stall).
+bg_stage_config() {
+  [ -d "$BG_RELEASE_DIR/deploy/db/init" ] || bg_die "missing deploy/db/init in the bundle"
+  [ -f "$BG_RELEASE_DIR/deploy/nginx/nginx.conf" ] || bg_die "missing deploy/nginx/nginx.conf in the bundle"
+  mkdir -p "$BG_ENV_DIR/db-init" "$BG_ENV_DIR/nginx/conf" || bg_die "could not create the config directories"
+  cp -a "$BG_RELEASE_DIR/deploy/db/init/." "$BG_ENV_DIR/db-init/" || bg_die "could not stage the database init scripts"
+  # Copied over the existing file (same inode); a running nginx picks it up at the next reload.
+  cp "$BG_RELEASE_DIR/deploy/nginx/nginx.conf" "$BG_ENV_DIR/nginx/conf/default.conf" || bg_die "could not stage the nginx config"
+}
+
+# Start the database if it is not running, and NEVER recreate or restart it: --no-recreate leaves a
+# running container alone even if Compose thinks its definition changed.
+bg_db_up() {
+  bg_compose up -d --no-recreate db || return 1
+  bg_retry 60 2 bg_compose exec -T db pg_isready -h 127.0.0.1 -U shopnest_admin -d shopnest
+}
+
+bg_export_tags() {
+  BLUE_TAG="$(cat "$BG_STATE_DIR/tag-blue" 2>/dev/null || echo none)"
+  GREEN_TAG="$(cat "$BG_STATE_DIR/tag-green" 2>/dev/null || echo none)"
+  export BLUE_TAG GREEN_TAG
+}
+
+bg_compose() { docker compose -p "$BG_PROJECT" -f "$BG_COMPOSE_FILE" "$@"; }
+
+bg_active() { cat "$BG_STATE_DIR/active" 2>/dev/null || true; }
+bg_other() { if [ "$1" = blue ]; then echo green; else echo blue; fi; }
+bg_idle() {
+  local current
+  current="$(bg_active)"
+  if [ -z "$current" ]; then echo blue; else bg_other "$current"; fi
+}
+
+# bg_retry <attempts> <interval seconds> <command...>
+bg_retry() {
+  local attempts="$1" interval="$2" n
+  shift 2
+  for ((n = 1; n <= attempts; n++)); do
+    if "$@" > /dev/null 2>&1; then return 0; fi
+    sleep "$interval"
+  done
+  return 1
+}
+
+# ---- history -----------------------------------------------------------------------------------
+# bg_history <status> <sha> <detail>
+bg_history() { printf '%s %s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BG_ENV" "$2" "$1" "$3" >> "$BG_STATE_DIR/history.log"; }
+bg_history_has_deployed() {
+  [ -f "$BG_STATE_DIR/history.log" ] && awk -v s="$1" '$3 == s && $4 == "deployed" { found = 1 } END { exit !found }' "$BG_STATE_DIR/history.log"
+}
+
+# ---- images and frontend files -------------------------------------------------------------------
+bg_image_revision() { docker image inspect "shopnest-backend:$1" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2> /dev/null; }
+
+# bg_frontend_install <sha> <dist dir>: one directory of static files per release, kept for rollback.
+bg_frontend_install() {
+  local dest="$BG_FRONTEND_DIR/releases/$1"
+  [ -d "$2" ] || return 1
+  if [ ! -d "$dest" ]; then
+    rm -rf "$dest.tmp"
+    mkdir -p "$dest.tmp" && cp -a "$2/." "$dest.tmp/" && mv "$dest.tmp" "$dest" || return 1
+  fi
+}
+
+# ---- nginx switching -----------------------------------------------------------------------------
+bg_active_conf_text() { # <colour> <sha>
+  printf 'upstream backend_active {\n  server backend-%s:3000;\n}\nmap $host $frontend_root {\n  default /srv/frontend/releases/%s;\n}\n' "$1" "$2"
+}
+bg_write_active_conf() { # atomic: write a hidden temp file in the same directory, then rename over active.conf
+  local tmp="$BG_UPSTREAM_DIR/.active.conf.tmp"
+  printf '%s' "$1" > "$tmp" && mv -f "$tmp" "$BG_UPSTREAM_DIR/active.conf"
+}
+bg_nginx_running() { [ -n "$(bg_compose ps --status running -q nginx 2> /dev/null)" ]; }
+
+# bg_switch <colour> <sha>: point nginx at that colour and that release's frontend. On any failure the
+# previous active.conf is restored (and reloaded when nginx was running), so traffic never lands on a
+# configuration that failed `nginx -t`.
+bg_switch() {
+  local colour="$1" sha="$2" previous="" had_previous=0
+  if [ -f "$BG_UPSTREAM_DIR/active.conf" ]; then
+    previous="$(cat "$BG_UPSTREAM_DIR/active.conf")"
+    had_previous=1
+  fi
+  [ -d "$BG_FRONTEND_DIR/releases/$sha" ] || { bg_log "frontend release $sha is not installed"; return 1; }
+  bg_write_active_conf "$(bg_active_conf_text "$colour" "$sha")" || return 1
+  if bg_nginx_running; then
+    if bg_compose exec -T nginx nginx -t && bg_compose exec -T nginx nginx -s reload; then
+      return 0
+    fi
+    if [ "$had_previous" = 1 ]; then bg_write_active_conf "$previous"; fi
+    return 1
+  fi
+  if bg_compose up -d nginx; then return 0; fi
+  if [ "$had_previous" = 1 ]; then bg_write_active_conf "$previous"; fi
+  return 1
+}
+
+# ---- health and version checks -----------------------------------------------------------------
+# A colour is ready when its own /health is OK and its /version reports the expected commit.
+bg_color_ready() { # <colour> <sha>
+  local commit
+  bg_compose exec -T "backend-$1" node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" || return 1
+  commit="$(bg_compose exec -T "backend-$1" node -e "fetch('http://127.0.0.1:3000/version').then(r=>r.json()).then(j=>console.log(j.commit)).catch(()=>process.exit(1))")" || return 1
+  [ "$commit" = "$2" ]
+}
+
+bg_nginx_get() { bg_compose exec -T nginx wget -q -O - "http://127.0.0.1:8081$1"; }
+
+# Live check, as traffic sees it: through nginx (health and commit), and through the published port
+# when curl is available on the host (health and the frontend index).
+bg_live_check() { # <sha>
+  local body
+  body="$(bg_nginx_get /health)" || return 1
+  [[ "$body" == *'"status":"ok"'* ]] || return 1
+  body="$(bg_nginx_get /version)" || return 1
+  [[ "$body" == *"\"commit\":\"$1\""* ]] || return 1
+  if command -v curl > /dev/null 2>&1 && [ -z "${BG_SKIP_PUBLIC_CHECK:-}" ]; then
+    curl -fsS --max-time 5 "http://127.0.0.1:${HTTP_PORT}/health" | grep -q '"status":"ok"' || return 1
+    curl -fsS --max-time 5 -o /dev/null "http://127.0.0.1:${HTTP_PORT}/" || return 1
+  fi
+}
+
+# ---- the release step shared by deploy and rollback ----------------------------------------------
+bg_abort_idle() { # <colour> <previous tag value>: remove a colour that must not stay up
+  bg_compose stop "backend-$1" > /dev/null 2>&1 || true
+  bg_compose rm -f "backend-$1" > /dev/null 2>&1 || true
+  printf '%s\n' "$2" > "$BG_STATE_DIR/tag-$1"
+  bg_export_tags
+}
+
+# bg_release <sha> [note]: put <sha> on the idle colour, validate it, move traffic, verify, then drain
+# and stop the old colour. Anything that fails before the switch leaves the live release untouched;
+# anything that fails after it returns traffic to the previous release. Returns 0 only on success.
+bg_release() {
+  local sha="$1" note="${2:-deploy}" prev prev_sha="" idle old_idle_tag restored=1
+  prev="$(bg_active)"
+  if [ -n "$prev" ]; then prev_sha="$(cat "$BG_STATE_DIR/tag-$prev")"; fi
+  idle="$(bg_idle)"
+  old_idle_tag="$(cat "$BG_STATE_DIR/tag-$idle" 2> /dev/null || echo none)"
+  bg_log "release $sha ($note): live=${prev:-none} (${prev_sha:-none}), target colour=$idle"
+
+  printf '%s\n' "$sha" > "$BG_STATE_DIR/tag-$idle" || return 1
+  bg_export_tags
+  if ! bg_compose up -d --force-recreate --no-deps "backend-$idle"; then
+    bg_log "could not start backend-$idle"
+    bg_abort_idle "$idle" "$old_idle_tag"
+    bg_history failed "$sha" "could not start backend-$idle; live release unchanged"
+    return 1
+  fi
+
+  bg_log "waiting for backend-$idle to report healthy and commit $sha"
+  if ! bg_retry "${READY_ATTEMPTS:-30}" "${READY_INTERVAL:-2}" bg_color_ready "$idle" "$sha"; then
+    bg_log "validation FAILED for backend-$idle; traffic was NOT moved"
+    bg_compose logs --no-color --tail 40 "backend-$idle" || true
+    bg_abort_idle "$idle" "$old_idle_tag"
+    bg_history failed "$sha" "pre-switch validation failed; live release unchanged"
+    return 1
+  fi
+
+  bg_log "backend-$idle validated; switching traffic"
+  if ! bg_switch "$idle" "$sha"; then
+    bg_log "switch FAILED; the previous nginx configuration was restored"
+    bg_abort_idle "$idle" "$old_idle_tag"
+    bg_history failed "$sha" "nginx switch failed; live release unchanged"
+    return 1
+  fi
+  printf '%s\n' "$idle" > "$BG_STATE_DIR/active"
+
+  if ! bg_retry "${LIVE_ATTEMPTS:-10}" "${LIVE_INTERVAL:-1}" bg_live_check "$sha"; then
+    bg_log "post-switch verification FAILED; returning traffic to the previous release"
+    if [ -n "$prev" ]; then
+      restored=0
+      if bg_switch "$prev" "$prev_sha"; then
+        printf '%s\n' "$prev" > "$BG_STATE_DIR/active"
+        if bg_retry "${LIVE_ATTEMPTS:-10}" "${LIVE_INTERVAL:-1}" bg_live_check "$prev_sha"; then
+          restored=1
+          bg_log "previous release $prev_sha is live again (automatic rollback complete)"
+        else
+          bg_log "CRITICAL: traffic moved back to $prev but release $prev_sha did not verify"
+        fi
+      else
+        bg_log "CRITICAL: could not move traffic back to $prev"
+      fi
+    else
+      : > "$BG_STATE_DIR/active"
+      bg_log "no previous release exists, so there is nothing to return to"
+    fi
+    # Stop the failed colour only when traffic is safely elsewhere.
+    if [ "$restored" = 1 ] && [ -n "$prev" ]; then bg_abort_idle "$idle" "$old_idle_tag"; fi
+    bg_history failed "$sha" "post-switch verification failed; automatic rollback to ${prev_sha:-nothing} (restored=$restored)"
+    return 1
+  fi
+
+  printf '%s\n' "$sha" > "$BG_STATE_DIR/last_good"
+  bg_history deployed "$sha" "$note; live on $idle; replaced ${prev_sha:-nothing}"
+  if [ -n "$prev" ]; then
+    bg_log "draining backend-$prev for ${DRAIN_SECONDS:-10}s before stopping it"
+    sleep "${DRAIN_SECONDS:-10}"
+    bg_compose stop "backend-$prev" > /dev/null 2>&1 || bg_log "warning: could not stop backend-$prev"
+  fi
+  bg_log "release $sha is live on $idle"
+}
+
+# One deploy or rollback per environment at a time. mkdir is atomic, so it works as a lock.
+bg_lock() {
+  BG_LOCK_DIR="$BG_ENV_DIR/.lock"
+  mkdir "$BG_LOCK_DIR" 2> /dev/null || bg_die "another deploy or rollback is running for $BG_ENV (remove $BG_LOCK_DIR only if you are sure none is)"
+}
+bg_unlock() { rmdir "$BG_LOCK_DIR" 2> /dev/null || true; }
