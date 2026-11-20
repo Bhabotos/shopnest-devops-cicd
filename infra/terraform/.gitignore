@@ -1,0 +1,20 @@
+# Local Terraform working files. State and plans can contain resource details; they stay on this machine.
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfstate.d/
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Variable files hold your own values (never commit them). The example file is the only one tracked.
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+# The dependency lock file IS committed on purpose (it pins provider checksums).

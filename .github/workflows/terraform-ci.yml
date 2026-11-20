@@ -1,0 +1,106 @@
+name: Terraform CI
+
+# Static checks for the infrastructure code only. It never authenticates to AWS and never plans, applies, destroys, imports or touches
+# state: it needs no AWS secret, no GitHub variable and no cloud role. Runs when Terraform files or this workflow change.
+#
+# Two jobs, named so they can later be added as required checks:
+#   - "Terraform fmt and validate"
+#   - "Terraform secret scan"
+# Note for that day: because the workflow is path-filtered, a pull request that touches neither path would never report these
+# checks, so they must not be made required until a same-named pass-through job exists for the other pull requests.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform-ci.yml"
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: the workflow only reads the repository. Each job repeats this explicitly.
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.17.1"
+  GITLEAKS_VERSION: "8.30.1"
+  # SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz, from the checksum file published with that release.
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+
+jobs:
+  terraform:
+    name: Terraform fmt and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: No state, plan or variable files are tracked
+        # Local-only files stay local: state and plans can hold resource details, variable files hold your own values.
+        run: |
+          set -euo pipefail
+          bad="$(git ls-files . | grep -E '\.(tfstate|tfplan)(\.|$)|\.tfvars(\.json)?$|(^|/)\.terraform/' || true)"
+          if [ -n "$bad" ]; then
+            echo "::error::Tracked files that must stay local:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "no state, plan, variable or .terraform files are tracked"
+      - name: Format check
+        run: terraform fmt -check -recursive -diff
+      - name: Init (no backend; the committed lock file must be sufficient)
+        # -backend=false: no state backend is contacted. -lockfile=readonly: fail instead of changing .terraform.lock.hcl,
+        # which proves the committed lock file covers this platform. The AWS provider is downloaded from the public registry.
+        run: terraform init -backend=false -input=false -lockfile=readonly
+      - name: Validate
+        run: terraform validate
+
+  secret-scan:
+    name: Terraform secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (checksum verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/gitleaks-bin"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks-bin" gitleaks
+          "$RUNNER_TEMP/gitleaks-bin/gitleaks" version
+      - name: Scan the Terraform directory and this workflow
+        # The repository's own rules (.gitleaks.toml) apply, including the IP-address and EC2-hostname rules.
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gitleaks-bin/gitleaks" dir infra --config .gitleaks.toml --no-banner --redact
+          "$RUNNER_TEMP/gitleaks-bin/gitleaks" dir .github/workflows/terraform-ci.yml --config .gitleaks.toml --no-banner --redact
+      - name: Scan the Git history
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gitleaks-bin/gitleaks" git . --config .gitleaks.toml --no-banner --redact

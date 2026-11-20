@@ -1,0 +1,62 @@
+#!/bin/bash
+# First-boot setup for the ShopNest application instance (runs once, as root, via cloud-init).
+#
+# This instance runs nginx and the backend containers. It does NOT run PostgreSQL: the database is a private RDS
+# instance, reached over the VPC on port 5432. A PostgreSQL *client* is installed only for operator bootstrap work.
+#
+# It never writes a secret and holds no AWS access keys. The instance role provides everything the host needs:
+#   - Systems Manager registration (the only administrative access; there is no SSH key, no sshd setup, no inbound port),
+#   - read-only ECR pulls for this environment's images,
+#   - GetSecretValue on the named database secret(s), used by the backend's AWS SDK at runtime,
+#   - read-only access to the deployment artifact prefix.
+#
+# COMPLETION MARKER. The deploy tooling must check for /var/lib/shopnest/bootstrap-complete before it deploys. If setup fails, the
+# script writes /var/lib/shopnest/bootstrap-failed instead (with the failing line). Recovery: re-run this script from an SSM
+# session (cloud-init keeps it under /var/lib/cloud/instance/scripts/), or replace the instance (terraform apply -replace).
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+STATE_DIR=/var/lib/shopnest
+mkdir -p "$STATE_DIR"
+rm -f "$STATE_DIR/bootstrap-complete" "$STATE_DIR/bootstrap-failed"
+trap 'echo "bootstrap failed near line $LINENO at $(date -u +%FT%TZ)" > "$STATE_DIR/bootstrap-failed"' ERR
+
+# retry <attempts> <delay seconds> <command...>: the NAT Gateway may still be coming up when the instance boots.
+retry() {
+  local attempts="$1" delay="$2" n
+  shift 2
+  for ((n = 1; n <= attempts; n++)); do
+    if "$@"; then return 0; fi
+    echo "attempt $n of $attempts failed: $*" >&2
+    sleep "$delay"
+  done
+  return 1
+}
+
+retry 30 10 apt-get update -y
+retry 5 10 apt-get install -y docker.io docker-compose-v2 postgresql-client ca-certificates curl unzip
+systemctl enable --now docker
+
+# AWS CLI v2 (used by the deploy tooling for `aws ecr get-login-password`). The SSM agent is preinstalled on the Ubuntu AMI.
+retry 5 10 snap install aws-cli --classic
+
+# Service account used by the deploy tooling: no password, no login shell, no sudo, only the docker group.
+# (SSM Run Command runs as root unless a command uses sudo -u deploy; the model is decided with the deployment workflow.)
+if ! id deploy > /dev/null 2>&1; then
+  useradd --create-home --shell /usr/sbin/nologin deploy
+fi
+usermod -aG docker deploy
+
+# Directories used by deploy/scripts (SHOPNEST_HOME defaults to ~/shopnest of the user that runs them).
+install -d -m 750 -o deploy -g deploy /home/deploy/shopnest/incoming /home/deploy/shopnest/logs
+
+# Amazon RDS CA bundle, so clients can verify the database's TLS certificate (rds.force_ssl is on). Fetched over HTTPS
+# from AWS; verify its fingerprint against the AWS documentation before relying on it for production.
+install -d -m 755 /opt/shopnest
+if retry 5 10 curl -fsSL -o /opt/shopnest/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem; then
+  chmod 644 /opt/shopnest/rds-global-bundle.pem
+else
+  echo "warning: could not download the RDS CA bundle; fetch it manually before connecting with TLS verification" >&2
+fi
+
+date -u +%FT%TZ > "$STATE_DIR/bootstrap-complete"
