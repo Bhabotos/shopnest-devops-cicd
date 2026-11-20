@@ -1,0 +1,23 @@
+2026-11-20T14:22:25Z WARNING: BG_ALLOW_LOOSE_SECRETS=1, the secrets file mode is not checked (local rehearsal shopnest-demo-staging)
+2026-11-20T14:22:25Z deploy bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb to staging (bundle /tmp/tmp.DPMxWyYP9m/bundles/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+2026-11-20T14:22:25Z bundle verified
+2026-11-20T14:22:29Z backend image shopnest-backend:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb loaded
+2026-11-20T14:22:29Z ensuring the database is up (it is never recreated or restarted by a deploy)
+ Container shopnest-demo-staging-db-1 Running 
+2026-11-20T14:22:30Z applying migrations (owner role; must stay compatible with the live release)
+ Container shopnest-demo-staging-migrate-run-7fb1aaa4fb3d Creating 
+ Container shopnest-demo-staging-migrate-run-7fb1aaa4fb3d Created 
+no pending migrations
+2026-11-20T14:22:32Z release bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb (deploy): live=blue (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa), target colour=green
+ Container shopnest-demo-staging-backend-green-1 Creating 
+ Container shopnest-demo-staging-backend-green-1 Created 
+ Container shopnest-demo-staging-backend-green-1 Starting 
+ Container shopnest-demo-staging-backend-green-1 Started 
+2026-11-20T14:22:32Z waiting for backend-green to report healthy and commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+2026-11-20T14:22:33Z backend-green validated; switching traffic
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/11/20 14:22:34 [notice] 68#68: signal process started
+2026-11-20T14:22:35Z draining backend-blue for 10s before stopping it
+2026-11-20T14:22:46Z release bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb is live on green
+2026-11-20T14:22:46Z DEPLOY SUCCEEDED: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb is live on staging

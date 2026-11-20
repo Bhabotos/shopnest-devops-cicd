@@ -1,0 +1,5 @@
+2026-11-20T14:22:20Z staging aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa deployed deploy; live on blue; replaced nothing
+2026-11-20T14:22:35Z staging bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb deployed deploy; live on green; replaced aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-11-20T14:24:43Z staging cccccccccccccccccccccccccccccccccccccccc failed pre-switch validation failed; live release unchanged
+2026-11-20T14:24:53Z staging aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa deployed manual rollback; live on blue; replaced bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+2026-11-20T14:26:26Z staging eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee failed post-switch verification failed; automatic rollback to aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (restored=1)

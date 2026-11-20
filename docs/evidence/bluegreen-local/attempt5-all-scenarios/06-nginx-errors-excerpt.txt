@@ -1,0 +1,5 @@
+2026/11/20 14:26:04 [error] 327#327: *1067 rewrite or internal redirection cycle while internally redirecting to "/index.html", client: <docker-bridge-gateway>, server: _, request: "GET / HTTP/1.1", host: "127.0.0.1:18081"
+2026/11/20 14:26:04 [error] 328#328: *1070 rewrite or internal redirection cycle while internally redirecting to "/index.html", client: <docker-bridge-gateway>, server: _, request: "GET / HTTP/1.1", host: "127.0.0.1:18081"
+2026/11/20 14:26:04 [error] 329#329: *1071 rewrite or internal redirection cycle while internally redirecting to "/index.html", client: <docker-bridge-gateway>, server: _, request: "GET / HTTP/1.1", host: "127.0.0.1:18081"
+2026/11/20 14:26:04 [error] 331#331: *1076 rewrite or internal redirection cycle while internally redirecting to "/index.html", client: <docker-bridge-gateway>, server: _, request: "GET / HTTP/1.1", host: "127.0.0.1:18081"
+2026/11/20 14:26:04 [error] 332#332: *1077 rewrite or internal redirection cycle while internally redirecting to "/index.html", client: <docker-bridge-gateway>, server: _, request: "GET / HTTP/1.1", host: "127.0.0.1:18081"
