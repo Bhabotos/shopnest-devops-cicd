@@ -1,2 +1,10 @@
 # Keep the versioned hook LF so it runs under sh on every OS
 .githooks/* text eol=lf
+
+# Files that are executed or parsed by Linux tools must stay LF even when checked out on Windows.
+# Markdown and other documents are deliberately NOT listed, so they are not rewritten.
+*.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+nginx.conf text eol=lf
+deploy/db/init/* text eol=lf
