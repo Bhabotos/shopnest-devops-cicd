@@ -6,6 +6,8 @@
 # colour, must report /health OK and /version == that SHA, and only then does traffic move. No
 # migrations run: a rollback never changes the schema. The old image and frontend files must still be
 # on the server (they are kept), and the SHA must appear as "deployed" in the release history.
+# Exit codes: 0 rolled back (or already live); 1 failed, the previous release is serving; 3 failed AND the
+# recovery failed (critical, needs an operator); 2 usage.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +44,7 @@ bg_log "manual rollback of $BG_ENV to $SHA"
 bg_history_has_deployed "$SHA" || bg_die "$SHA is not in the release history as deployed; see $BG_STATE_DIR/history.log"
 [ "$(bg_image_revision "$SHA" || true)" = "$SHA" ] || bg_die "image shopnest-backend:$SHA is not on this server any more"
 [ -d "$BG_FRONTEND_DIR/releases/$SHA" ] || bg_die "frontend files for $SHA are not on this server any more"
+bg_frontend_ok "$BG_FRONTEND_DIR/releases/$SHA" || bg_die "frontend files for $SHA have no non-empty index.html; refusing before anything is changed"
 
 live="$(bg_active)"
 if [ -n "$live" ] && [ "$(cat "$BG_STATE_DIR/tag-$live")" = "$SHA" ]; then
@@ -55,6 +58,11 @@ bg_db_up || bg_die "the database did not become ready"
 if bg_release "$SHA" "manual rollback"; then
   bg_log "ROLLBACK SUCCEEDED: $SHA is live on $BG_ENV"
 else
-  bg_log "ROLLBACK FAILED: the live release is unchanged or was restored; see the messages above"
-  exit 1
+  rc=$?
+  if [ "$rc" = 3 ]; then
+    bg_log "ROLLBACK FAILED AND RECOVERY FAILED (exit 3): the environment may be serving a release that did not verify"
+  else
+    bg_log "ROLLBACK FAILED (exit $rc): the live release is unchanged or was restored; see the messages above"
+  fi
+  exit "$rc"
 fi

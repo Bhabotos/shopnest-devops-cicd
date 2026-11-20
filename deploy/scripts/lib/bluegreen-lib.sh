@@ -122,6 +122,11 @@ bg_history_has_deployed() {
 # ---- images and frontend files -------------------------------------------------------------------
 bg_image_revision() { docker image inspect "shopnest-backend:$1" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2> /dev/null; }
 
+# A frontend release is usable only if it has a non-empty index.html. Without it nginx answers every page
+# with HTTP 500 (an internal redirection cycle through try_files), which no health endpoint would show:
+# found by attempt 4 of the local rehearsal (83 of 181 requests failed while such a release was live).
+bg_frontend_ok() { [ -f "$1/index.html" ] && [ -s "$1/index.html" ]; }
+
 # bg_frontend_install <sha> <dist dir>: one directory of static files per release, kept for rollback.
 bg_frontend_install() {
   local dest="$BG_FRONTEND_DIR/releases/$1"
@@ -200,9 +205,15 @@ bg_abort_idle() { # <colour> <previous tag value>: remove a colour that must not
 
 # bg_release <sha> [note]: put <sha> on the idle colour, validate it, move traffic, verify, then drain
 # and stop the old colour. Anything that fails before the switch leaves the live release untouched;
-# anything that fails after it returns traffic to the previous release. Returns 0 only on success.
+# anything that fails after it returns traffic to the previous release.
+# Return codes (the CD workflows rely on them):
+#   0  the release is live
+#   1  the release failed and the previous release is serving: it was never replaced (failure before the
+#      switch) or traffic was returned to it and verified (automatic rollback complete)
+#   3  the release failed AND the recovery failed: traffic may be on a release that did not verify, or
+#      there was no previous release to return to. Needs an operator now.
 bg_release() {
-  local sha="$1" note="${2:-deploy}" prev prev_sha="" idle old_idle_tag restored=1
+  local sha="$1" note="${2:-deploy}" prev prev_sha="" idle old_idle_tag restored=1 rc=1
   prev="$(bg_active)"
   if [ -n "$prev" ]; then prev_sha="$(cat "$BG_STATE_DIR/tag-$prev")"; fi
   idle="$(bg_idle)"
@@ -224,6 +235,14 @@ bg_release() {
     bg_compose logs --no-color --tail 40 "backend-$idle" || true
     bg_abort_idle "$idle" "$old_idle_tag"
     bg_history failed "$sha" "pre-switch validation failed; live release unchanged"
+    return 1
+  fi
+
+  # Everything that can be checked without sending traffic is checked before the switch.
+  if ! bg_frontend_ok "$BG_FRONTEND_DIR/releases/$sha"; then
+    bg_log "validation FAILED: the frontend files for $sha have no non-empty index.html; traffic was NOT moved"
+    bg_abort_idle "$idle" "$old_idle_tag"
+    bg_history failed "$sha" "pre-switch validation failed (frontend has no index.html); live release unchanged"
     return 1
   fi
 
@@ -253,12 +272,14 @@ bg_release() {
       fi
     else
       : > "$BG_STATE_DIR/active"
-      bg_log "no previous release exists, so there is nothing to return to"
+      restored=0
+      bg_log "CRITICAL: no previous release exists, so there is nothing to return to; the failed release is still receiving traffic"
     fi
+    if [ "$restored" = 0 ]; then rc=3; fi
     # Stop the failed colour only when traffic is safely elsewhere.
     if [ "$restored" = 1 ] && [ -n "$prev" ]; then bg_abort_idle "$idle" "$old_idle_tag"; fi
     bg_history failed "$sha" "post-switch verification failed; automatic rollback to ${prev_sha:-nothing} (restored=$restored)"
-    return 1
+    return "$rc"
   fi
 
   printf '%s\n' "$sha" > "$BG_STATE_DIR/last_good"

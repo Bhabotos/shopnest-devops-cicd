@@ -7,6 +7,8 @@
 # 3. start the idle colour, require /health OK and /version == the release SHA
 # 4. only then switch nginx (backend colour and frontend files in one atomic reload) and verify live
 # 5. on any failure: traffic stays on, or returns to, the previous release (see bg_release)
+# Exit codes: 0 deployed; 1 failed, the previous release is serving; 3 failed AND the automatic rollback
+# did not restore a verified release (critical, needs an operator); 2 usage.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,6 +47,7 @@ bg_log "deploy $SHA to $BG_ENV (bundle $BUNDLE_DIR)"
 [ "$(cat "$BUNDLE_DIR/RELEASE_SHA" 2> /dev/null)" = "$SHA" ] || bg_die "the bundle is for a different commit than --sha"
 (cd "$BUNDLE_DIR" && sha256sum --check --strict SHA256SUMS > /dev/null) || bg_die "bundle checksum verification failed"
 bg_log "bundle verified"
+bg_frontend_ok "$BUNDLE_DIR/frontend-dist" || bg_die "frontend-dist has no non-empty index.html; refusing before anything is changed"
 
 [ -f "$BUNDLE_DIR/backend-image.tar.gz" ] || bg_die "backend-image.tar.gz is missing from the bundle"
 docker load --input "$BUNDLE_DIR/backend-image.tar.gz" > /dev/null
@@ -75,6 +78,11 @@ fi
 if bg_release "$SHA" "deploy"; then
   bg_log "DEPLOY SUCCEEDED: $SHA is live on $BG_ENV"
 else
-  bg_log "DEPLOY FAILED: see the messages above; history: $BG_STATE_DIR/history.log"
-  exit 1
+  rc=$?
+  if [ "$rc" = 3 ]; then
+    bg_log "DEPLOY FAILED AND RECOVERY FAILED (exit 3): the environment may be serving a release that did not verify; history: $BG_STATE_DIR/history.log"
+  else
+    bg_log "DEPLOY FAILED (exit $rc): the previous release is serving; see the messages above; history: $BG_STATE_DIR/history.log"
+  fi
+  exit "$rc"
 fi

@@ -225,6 +225,68 @@ chmod 644 "$SHOPNEST_HOME/staging/secrets.env" 2> /dev/null || true
 ( BG_ALLOW_LOOSE_SECRETS=0 deploy staging "$B" ) > /dev/null 2>&1; rc=$?
 if [ "$(stat -c '%a' "$SHOPNEST_HOME/staging/secrets.env")" != "600" ]; then check "only the exact value 1 enables the bypass (0 does not)" "$rc" 1; else ok "bypass value check skipped (filesystem reports 600)"; fi
 
+echo "== 15. exit codes: failed with recovery (1) versus failed WITHOUT recovery (3)"
+new_world
+deploy staging "$A" > /dev/null; deploy staging "$B" > /dev/null
+mkdir -p "$FAKE/postswitch_bad"; touch "$FAKE/postswitch_bad/$D"
+deploy staging "$D"; check "deploy fails after the switch and the rollback works: exit 1" $? 1
+contains "the log says the previous release is serving" "$W/out" "DEPLOY FAILED (exit 1): the previous release is serving"
+contains "the history says restored=1" "$SHOPNEST_HOME/staging/state/history.log" "automatic rollback to $B (restored=1)"
+new_world
+deploy staging "$A" > /dev/null; deploy staging "$B" > /dev/null
+mkdir -p "$FAKE/postswitch_bad"; touch "$FAKE/postswitch_bad/$D" "$FAKE/postswitch_bad/$B"
+deploy staging "$D"; check "deploy fails after the switch AND the previous release does not verify: exit 3" $? 3
+contains "the log says recovery failed" "$W/out" "DEPLOY FAILED AND RECOVERY FAILED (exit 3)"
+contains "the rollback error is not hidden" "$W/out" "CRITICAL: traffic moved back to green but release $B did not verify"
+contains "the history says restored=0" "$SHOPNEST_HOME/staging/state/history.log" "(restored=0)"
+new_world
+mkdir -p "$FAKE/postswitch_bad"; touch "$FAKE/postswitch_bad/$A"
+deploy staging "$A"; check "first deploy fails after the switch, nothing to return to: exit 3" $? 3
+contains "says there is nothing to return to" "$W/out" "CRITICAL: no previous release exists"
+new_world
+deploy staging "$A" > /dev/null; deploy staging "$B" > /dev/null
+mkdir -p "$FAKE/postswitch_bad"; touch "$FAKE/postswitch_bad/$A"
+rollback staging "$A"; check "manual rollback fails after the switch, B restored: exit 1" $? 1
+contains "rollback log: previous release serving" "$W/out" "ROLLBACK FAILED (exit 1)"
+check "B is serving again" "$(served)" "green $B"
+touch "$FAKE/postswitch_bad/$B"
+rollback staging "$A"; check "manual rollback fails and B does not verify either: exit 3" $? 3
+contains "rollback log: recovery failed" "$W/out" "ROLLBACK FAILED AND RECOVERY FAILED (exit 3)"
+new_world
+mkdir -p "$FAKE/bad_health"; touch "$FAKE/bad_health/$A"
+deploy staging "$A"; check "a failure before the switch stays exit 1" $? 1
+new_world
+touch "$FAKE/migrate_fail"
+deploy staging "$A"; check "a migration failure stays exit 1" $? 1
+
+echo "== 16. a frontend release without index.html is refused BEFORE traffic can reach it (attempt 4: 83 of 181 requests failed)"
+new_world
+make_bundle "$A"
+rm -f "$W/bundles/$A/frontend-dist/index.html"
+(cd "$W/bundles/$A" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+deploy staging "$A"; check "a bundle whose frontend has no index.html is refused" $? 1
+contains "explains" "$W/out" "no non-empty index.html"
+check "nothing was started or migrated" "$(grep -c '^run \|^up ' "$FAKE/calls.log" 2> /dev/null || echo 0)" 0
+new_world
+make_bundle "$A"
+: > "$W/bundles/$A/frontend-dist/index.html"
+(cd "$W/bundles/$A" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+deploy staging "$A"; check "an empty index.html is refused too" $? 1
+new_world
+deploy staging "$A" > /dev/null
+reloads_before="$(reloads)"
+mkdir -p "$SHOPNEST_HOME/staging/frontend/releases/$B"   # an installed release that has no index.html
+deploy staging "$B"; check "an installed release without index.html is rejected before the switch" $? 1
+contains "traffic was not moved" "$W/out" "no non-empty index.html; traffic was NOT moved"
+check "A is still live" "$(served)" "blue $A"
+check "no nginx reload happened" "$(reloads)" "$reloads_before"
+check "B recorded as failed" "$(history_count failed "$B")" 1
+new_world
+deploy staging "$A" > /dev/null; deploy staging "$B" > /dev/null
+rm -f "$SHOPNEST_HOME/staging/frontend/releases/$A/index.html"
+rollback staging "$A"; check "a manual rollback to a release whose frontend lost its index.html is refused" $? 1
+contains "explains" "$W/out" "no non-empty index.html"
+
 echo "== 12. no secrets in any log"
 if grep -rq 'aaaaaaaaaaaaaaaa11\|bbbbbbbbbbbbbbbb22\|cccccccccccccccc33' "$SHOPNEST_HOME/logs" "$W/out" 2> /dev/null; then bad "a password appears in a log"; else ok "no password appears in the deployment logs"; fi
 
