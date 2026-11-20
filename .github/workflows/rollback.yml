@@ -1,0 +1,202 @@
+name: Rollback
+
+# Manual rollback of one environment to a release that was deployed earlier (assignment Part G).
+# It has never been run: AWS, the GitHub Environments and the OIDC role do not exist yet. It runs only when the repository variable CD_ENABLED is "true", like cd.yml, and
+# only from main. Production waits for the approval on the `production` GitHub Environment, because
+# the rollback job names that Environment.
+#
+# The AWS credentials, "Open SSH" and "Prepare SSH" steps are kept IDENTICAL to cd.yml on purpose
+# (one reviewed SSH strategy); the "Deploy scripts and Compose" job in ci.yml fails if they drift.
+#
+# The rollback itself is deploy/scripts/rollback.sh, run on the server from the CURRENT main tooling.
+# That script refuses a SHA that is not recorded as "deployed" in the environment's release history,
+# whose image label does not equal the SHA, or whose frontend files are gone; it then starts that
+# release on the idle colour, requires /health OK and /version == the SHA, and only then moves
+# traffic. It never runs migrations and never recreates the database.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        type: choice
+        required: true
+        options: [staging, production]
+      sha:
+        description: Full 40-character commit SHA of an earlier release (must appear as deployed in the release history)
+        type: string
+        required: true
+
+# No default token permissions: every job declares exactly what it needs.
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate the rollback request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    if: vars.CD_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Check the inputs and the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ENV: ${{ inputs.environment }}
+          TARGET_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_ENV" =~ ^(staging|production)$ ]] || { echo "::error::environment must be staging or production"; exit 1; }
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full 40-character lowercase commit SHA"; exit 1; }
+          # The target must be a commit of this repository that is an ancestor of (or equal to) main.
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${TARGET_SHA}...${GITHUB_SHA}" --jq .status)"
+          case "$status" in
+            identical | ahead) ;;
+            *) echo "::error::${TARGET_SHA} is not an ancestor of main (compare status: ${status})"; exit 1 ;;
+          esac
+          {
+            echo "### Rollback request"
+            echo "- Environment: \`${TARGET_ENV}\`"
+            echo "- Target release: \`${TARGET_SHA}\`"
+            echo "- Requested by: ${GITHUB_ACTOR}"
+            echo "- Tooling from main at \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  rollback:
+    name: Roll back ${{ inputs.environment }}
+    needs: validate
+    runs-on: ubuntu-latest
+    # Shorter than the 15 minute SSH rule expiry, so the sweeper never revokes a live rollback.
+    timeout-minutes: 10
+    # Dynamic Environment: choosing production applies the production protection rules (required reviewers).
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      # The same groups as cd.yml, so a deploy and a rollback of one environment never overlap.
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      TARGET_ENV: ${{ inputs.environment }}
+      TARGET_SHA: ${{ inputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Assemble the rollback tooling (scripts only, no image, no frontend build)
+        run: |
+          set -euo pipefail
+          mkdir -p tooling/deploy
+          cp -r deploy/scripts deploy/nginx deploy/env deploy/db tooling/deploy/
+          cp deploy/docker-compose.prod.yml tooling/deploy/
+      - name: Configure AWS credentials (OIDC, short-lived)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 900
+      - name: Open SSH for this runner only
+        id: ssh_open
+        env:
+          SSH_SG_ID: ${{ vars.SSH_SG_ID }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          # Fixed constants, never taken from inputs: tcp, port 22.
+          ip="$(curl -fsS --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]')"
+          octet='(0|[1-9][0-9]{0,2})'
+          [[ "$ip" =~ ^${octet}\.${octet}\.${octet}\.${octet}$ ]] || fail "runner address is not a single IPv4 address"
+          a="${BASH_REMATCH[1]}"; b="${BASH_REMATCH[2]}"
+          for o in "${BASH_REMATCH[@]:1:4}"; do (( o <= 255 )) || fail "runner address octet out of range"; done
+          if (( a == 0 || a == 10 || a == 127 || a >= 224 )) \
+            || (( a == 169 && b == 254 )) \
+            || (( a == 172 && b >= 16 && b <= 31 )) \
+            || (( a == 192 && b == 168 )) \
+            || (( a == 100 && b >= 64 && b <= 127 )); then
+            fail "runner address is not a public IPv4 address"
+          fi
+          cidr="${ip}/32"
+          desc="gha-${GITHUB_RUN_ID}-exp-$(( $(date +%s) + 900 ))"
+          created="$(aws ec2 authorize-security-group-ingress \
+            --group-id "$SSH_SG_ID" \
+            --ip-permissions "[{\"IpProtocol\":\"tcp\",\"FromPort\":22,\"ToPort\":22,\"IpRanges\":[{\"CidrIp\":\"${cidr}\",\"Description\":\"${desc}\"}]}]" \
+            --output json)"
+          rule_id="$(printf '%s' "$created" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d).SecurityGroupRules||[];console.log(r.length===1?r[0].SecurityGroupRuleId:"")})')"
+          [[ "$rule_id" =~ ^sgr-[0-9a-f]+$ ]] || fail "could not read the created rule id"
+          echo "rule_id=${rule_id}" >> "$GITHUB_OUTPUT"
+          # Read the rule back and check it is exactly what was requested; also fail if the
+          # SSH group holds anything other than tcp/22 to a single address.
+          aws ec2 describe-security-group-rules --filters "Name=group-id,Values=${SSH_SG_ID}" --output json > "$RUNNER_TEMP/sg-rules.json"
+          if ! RULES_FILE="$RUNNER_TEMP/sg-rules.json" EXPECT_ID="$rule_id" EXPECT_CIDR="$cidr" EXPECT_DESC="$desc" node -e '
+            const rules = (JSON.parse(require("fs").readFileSync(process.env.RULES_FILE, "utf8")).SecurityGroupRules || []).filter((r) => !r.IsEgress);
+            const mine = rules.find((r) => r.SecurityGroupRuleId === process.env.EXPECT_ID);
+            const problems = [];
+            if (!mine) problems.push("created rule not found");
+            else if (mine.IpProtocol !== "tcp" || mine.FromPort !== 22 || mine.ToPort !== 22 || mine.CidrIpv4 !== process.env.EXPECT_CIDR || mine.Description !== process.env.EXPECT_DESC) problems.push("created rule differs from the request");
+            for (const r of rules) if (r.IpProtocol !== "tcp" || r.FromPort !== 22 || r.ToPort !== 22 || !/\/32$/.test(r.CidrIpv4 || "")) problems.push("unexpected ingress rule " + r.SecurityGroupRuleId);
+            if (problems.length) { console.error(problems.join("; ")); process.exit(1); }
+          '; then
+            # Clear the saved id only when the revoke worked, so the cleanup step retries otherwise.
+            if aws ec2 revoke-security-group-ingress --group-id "$SSH_SG_ID" --security-group-rule-ids "$rule_id"; then
+              echo "rule_id=" >> "$GITHUB_OUTPUT"
+            fi
+            fail "SSH group failed verification; the rule was revoked"
+          fi
+          echo "Opened tcp/22 for one runner address (rule ${rule_id}), expires in 15 minutes."
+      - name: Prepare SSH (pinned host key, no ssh-keyscan)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
+      - name: Run the rollback on the server
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_ENV" =~ ^(staging|production)$ ]] || { echo "::error::bad environment"; exit 1; }
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::bad SHA"; exit 1; }
+          ssh_opts=(-i "$RUNNER_TEMP/deploy_key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15
+                    -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts")
+          remote="${EC2_USER}@${EC2_HOST}"
+          dir="shopnest/incoming/rollback-${GITHUB_RUN_ID}"
+          ssh "${ssh_opts[@]}" "$remote" "mkdir -p shopnest/incoming shopnest/logs && rm -rf ${dir}"
+          scp -q -r "${ssh_opts[@]}" tooling "${remote}:${dir}"
+          # Read-only: what is live now and what the history says (SHAs and timestamps only, no secrets).
+          ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/release-status.sh --env ${TARGET_ENV}"
+          # rollback.sh validates the SHA and the image identity BEFORE any traffic moves.
+          ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/rollback.sh --env ${TARGET_ENV} --sha ${TARGET_SHA}"
+          ssh "${ssh_opts[@]}" "$remote" "bash ${dir}/deploy/scripts/release-status.sh --env ${TARGET_ENV}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Collect the rollback log
+        # Only after SSH was opened; best effort, so a missing log never hides the real failure.
+        if: always() && steps.ssh_open.outputs.rule_id != ''
+        continue-on-error: true
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          scp -q -i "$RUNNER_TEMP/deploy_key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
+            "${EC2_USER}@${EC2_HOST}:shopnest/logs/rollback-${TARGET_ENV}-${TARGET_SHA}.log" rollback.log
+      - name: Upload the rollback log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rollback-log-${{ inputs.environment }}-${{ inputs.sha }}
+          path: rollback.log
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Close SSH ingress
+        # Runs on success, failure and cancellation. Revokes by rule id, never by address.
+        if: always() && steps.ssh_open.outputs.rule_id != ''
+        env:
+          SSH_SG_ID: ${{ vars.SSH_SG_ID }}
+          RULE_ID: ${{ steps.ssh_open.outputs.rule_id }}
+        run: aws ec2 revoke-security-group-ingress --group-id "$SSH_SG_ID" --security-group-rule-ids "$RULE_ID"
+      - name: Remove SSH key material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/deploy_key" "$RUNNER_TEMP/known_hosts" "$RUNNER_TEMP/sg-rules.json"

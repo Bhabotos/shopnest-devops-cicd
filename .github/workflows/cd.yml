@@ -4,9 +4,10 @@ name: CD
 # Staging deploys first; production waits for the manual approval on the `production`
 # GitHub Environment. Design: docs/ARCHITECTURE.md and docs/OIDC_DESIGN.md.
 #
-# DRAFT STATUS: the AWS infrastructure and deploy/scripts/bluegreen-deploy.sh do not exist yet.
-# Nothing here runs until the repository variable CD_ENABLED is set to "true" (a deliberate,
-# separate step), so merging this file cannot start a failing deployment.
+# STATUS: written and rehearsed locally only (blue/green deploy and rollback scripts, offline tests,
+# a local Docker Desktop rehearsal); it has never run against AWS. Nothing here runs until the
+# repository variable CD_ENABLED is set to "true" (a deliberate, separate step), so merging this
+# file cannot start a deployment. Manual rollback is the separate rollback.yml workflow.
 on:
   workflow_run:
     workflows: [CI]
@@ -91,7 +92,15 @@ jobs:
       - name: Assemble the release bundle
         run: |
           set -euo pipefail
-          cp -r deploy release/deploy
+          # An explicit list: the server gets only what the deploy scripts use, never the tests, the
+          # development or test Compose files or the .env example.
+          mkdir -p release/deploy/scripts/lib release/deploy/env release/deploy/nginx release/deploy/db
+          cp deploy/docker-compose.prod.yml release/deploy/
+          cp deploy/scripts/bluegreen-deploy.sh deploy/scripts/rollback.sh deploy/scripts/release-status.sh              deploy/scripts/request-loop.sh release/deploy/scripts/
+          cp deploy/scripts/lib/bluegreen-lib.sh release/deploy/scripts/lib/
+          cp deploy/env/staging.env deploy/env/production.env release/deploy/env/
+          cp deploy/nginx/nginx.conf release/deploy/nginx/
+          cp -r deploy/db/init release/deploy/db/init
           find release/deploy -name '.env' -type f -delete
           printf '%s\n' "$RELEASE_SHA" > release/RELEASE_SHA
           (cd release && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
@@ -205,7 +214,8 @@ jobs:
           ssh "${ssh_opts[@]}" "$remote" "mkdir -p shopnest/incoming shopnest/logs && rm -rf shopnest/incoming/${RELEASE_SHA}"
           scp -q -r "${ssh_opts[@]}" release "${remote}:shopnest/incoming/${RELEASE_SHA}"
           # The script starts the idle colour, validates /health and /version (must equal the SHA),
-          # switches traffic only on success, and recovers by itself on failure (to be written).
+          # switches traffic only on success and, if the live check fails after the switch, returns
+          # traffic to the previous release by itself (see bg_release in deploy/scripts/lib).
           ssh "${ssh_opts[@]}" "$remote" "bash shopnest/incoming/${RELEASE_SHA}/deploy/scripts/bluegreen-deploy.sh --env ${DEPLOY_ENV} --sha ${RELEASE_SHA}"
       - name: Collect the deployment log
         # Only after SSH was opened; best effort, so a missing log never hides the real failure.
@@ -339,7 +349,8 @@ jobs:
           ssh "${ssh_opts[@]}" "$remote" "mkdir -p shopnest/incoming shopnest/logs && rm -rf shopnest/incoming/${RELEASE_SHA}"
           scp -q -r "${ssh_opts[@]}" release "${remote}:shopnest/incoming/${RELEASE_SHA}"
           # The script starts the idle colour, validates /health and /version (must equal the SHA),
-          # switches traffic only on success, and recovers by itself on failure (to be written).
+          # switches traffic only on success and, if the live check fails after the switch, returns
+          # traffic to the previous release by itself (see bg_release in deploy/scripts/lib).
           ssh "${ssh_opts[@]}" "$remote" "bash shopnest/incoming/${RELEASE_SHA}/deploy/scripts/bluegreen-deploy.sh --env ${DEPLOY_ENV} --sha ${RELEASE_SHA}"
       - name: Collect the deployment log
         # Only after SSH was opened; best effort, so a missing log never hides the real failure.
