@@ -1,0 +1,92 @@
+# Frontend tests
+# captured: 2026-11-20T03:32:33Z | node v24.15.0 | npm 11.12.1 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: npx vitest run (frontend)
+
+
+ RUN  v5.1.1 D:/DevOps-Projects/shopnest-devops-cicd/frontend
+
+ ✓ test/api.test.js > api client > fetchProducts unwraps the products array 8ms
+ ✓ test/api.test.js > api client > placeOrder POSTs JSON and returns the order 1ms
+ ✓ test/api.test.js > api client > throws an ApiError carrying the server message and code 3ms
+ ✓ test/api.test.js > api client > uses a generic message when the error body is not JSON 1ms
+ ✓ test/cart.test.js > cartReducer > adds a new product with quantity 1 3ms
+ ✓ test/cart.test.js > cartReducer > increments quantity when the product is added again 1ms
+ ✓ test/cart.test.js > cartReducer > never exceeds available stock 0ms
+ ✓ test/cart.test.js > cartReducer > never exceeds the per-line maximum 0ms
+ ✓ test/cart.test.js > cartReducer > does not add an out-of-stock product 0ms
+ ✓ test/cart.test.js > cartReducer > clamps quantity to a minimum of 1 instead of removing the line 0ms
+ ✓ test/cart.test.js > cartReducer > removes and clears lines 1ms
+ ✓ test/cart.test.js > cart totals > sums price times quantity and counts items 1ms
+ × test/format.test.js > formatMoney > converts minor units to a major-unit amount with two decimals 35ms
+   → expected 'BDT 1,299.00' to be 'BDT 1,299.00' // Object.is equality
+ × test/format.test.js > formatMoney > formats zero 1ms
+   → expected 'BDT 0.00' to be 'BDT 0.00' // Object.is equality
+ × test/format.test.js > formatMoney > uses lakh grouping for large amounts 1ms
+   → expected 'BDT 12,34,567.89' to be 'BDT 12,34,567.89' // Object.is equality
+ ✓ test/app.test.jsx > catalog > shows a loading state and then the products 61ms
+ ✓ test/app.test.jsx > catalog > marks out-of-stock products and offers no add button for them 59ms
+ ✓ test/app.test.jsx > catalog > shows an error with a working retry when loading fails 80ms
+ ✓ test/app.test.jsx > cart and checkout flow > updates the cart count and shows the total 110ms
+ ✓ test/app.test.jsx > cart and checkout flow > shows an empty-cart message after removing the last item 169ms
+ ✓ test/app.test.jsx > cart and checkout flow > blocks submission and shows errors for invalid customer details 249ms
+ ✓ test/app.test.jsx > cart and checkout flow > places an order, clears the cart and shows the confirmation 945ms
+ ✓ test/app.test.jsx > cart and checkout flow > keeps the cart and shows the server message when the order fails 900ms
+ ✓ test/app.test.jsx > validateCustomer > returns no errors for valid details 1ms
+ ✓ test/app.test.jsx > validateCustomer > flags a short address 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/format.test.js > formatMoney > converts minor units to a major-unit amount with two decimals
+AssertionError: expected 'BDT 1,299.00' to be 'BDT 1,299.00' // Object.is equality
+
+Expected: "BDT 1,299.00"
+Received: "BDT 1,299.00"
+
+ ❯ test/format.test.js:8:40
+      6| describe('formatMoney', () => {
+      7|   it('converts minor units to a major-unit amount with two decimals', …
+      8|     expect(formatMoney(129900, 'BDT')).toBe('BDT 1,299.00');
+       |                                        ^
+      9|   });
+     10|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/format.test.js > formatMoney > formats zero
+AssertionError: expected 'BDT 0.00' to be 'BDT 0.00' // Object.is equality
+
+Expected: "BDT 0.00"
+Received: "BDT 0.00"
+
+ ❯ test/format.test.js:12:35
+     10|
+     11|   it('formats zero', () => {
+     12|     expect(formatMoney(0, 'BDT')).toBe('BDT 0.00');
+       |                                   ^
+     13|   });
+     14|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/format.test.js > formatMoney > uses lakh grouping for large amounts
+AssertionError: expected 'BDT 12,34,567.89' to be 'BDT 12,34,567.89' // Object.is equality
+
+Expected: "BDT 12,34,567.89"
+Received: "BDT 12,34,567.89"
+
+ ❯ test/format.test.js:16:43
+     14|
+     15|   it('uses lakh grouping for large amounts', () => {
+     16|     expect(formatMoney(123456789, 'BDT')).toBe('BDT 12,34,567.89');
+       |                                           ^
+     17|   });
+     18| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  3 failed | 22 passed (25)
+   Start at  09:32:36
+   Duration  8.26s (environment 59%, setup 24%, tests 12%, transform 3%, import 2%, worker 1%)
+

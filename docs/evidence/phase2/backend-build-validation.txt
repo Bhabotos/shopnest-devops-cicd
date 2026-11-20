@@ -1,0 +1,17 @@
+# Backend build validation (docker build + import + startup checks)
+# captured: 2026-11-20T03:37:13Z | docker 29.6.2 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: bash deploy/scripts/verify-backend-build.sh
+
+== docker build
+PASS  image builds
+== import validation (production dependencies only, no network, no database)
+PASS  every src module imports in the production image
+== startup validation
+PASS  entrypoint refuses to start without DATABASE_URL (exit 1) and logs why
+== image contents
+PASS  runs as non-root user node
+PASS  tests are not in the production image
+PASS  NODE_ENV=production (the seed script therefore refuses to run in this image)
+
+ALL CHECKS PASSED (6)
+exit=0

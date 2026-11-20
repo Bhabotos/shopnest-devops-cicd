@@ -1,0 +1,150 @@
+# Stack verification: health, isolation, roles, persistence (throwaway Compose project shopnest-verify)
+# captured: 2026-11-20T03:37:26Z | docker 29.6.2 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: bash deploy/scripts/verify-stack.sh (passwords are random, process-local and never printed)
+
+
+== start (fresh throwaway project)
+ Image shopnest-verify-backend Building 
+ Image shopnest-verify-frontend Building 
+ Image shopnest-verify-migrate Building 
+ Image shopnest-verify-seed Building 
+ Image shopnest-verify-frontend Built 
+ Image shopnest-verify-migrate Built 
+ Image shopnest-verify-seed Built 
+ Image shopnest-verify-backend Built 
+ Network shopnest-verify_internal Creating 
+ Network shopnest-verify_internal Created 
+ Network shopnest-verify_web Creating 
+ Network shopnest-verify_web Created 
+ Volume shopnest-verify_pgdata Creating 
+ Volume shopnest-verify_pgdata Created 
+ Container shopnest-verify-db-1 Creating 
+ Container shopnest-verify-db-1 Created 
+ Container shopnest-verify-migrate-1 Creating 
+ Container shopnest-verify-migrate-1 Created 
+ Container shopnest-verify-seed-1 Creating 
+ Container shopnest-verify-seed-1 Created 
+ Container shopnest-verify-backend-1 Creating 
+ Container shopnest-verify-backend-1 Created 
+ Container shopnest-verify-frontend-1 Creating 
+ Container shopnest-verify-frontend-1 Created 
+ Container shopnest-verify-db-1 Starting 
+ Container shopnest-verify-db-1 Started 
+ Container shopnest-verify-db-1 Waiting 
+ Container shopnest-verify-db-1 Healthy 
+ Container shopnest-verify-migrate-1 Starting 
+ Container shopnest-verify-migrate-1 Started 
+ Container shopnest-verify-migrate-1 Waiting 
+ Container shopnest-verify-migrate-1 Exited 
+ Container shopnest-verify-seed-1 Starting 
+ Container shopnest-verify-seed-1 Started 
+ Container shopnest-verify-seed-1 Waiting 
+ Container shopnest-verify-seed-1 Exited 
+ Container shopnest-verify-backend-1 Starting 
+ Container shopnest-verify-backend-1 Started 
+ Container shopnest-verify-backend-1 Waiting 
+ Container shopnest-verify-backend-1 Healthy 
+ Container shopnest-verify-frontend-1 Starting 
+ Container shopnest-verify-frontend-1 Started 
+PASS  stack started
+
+== health checks
+PASS  db healthy after 1s
+PASS  backend healthy after 1s
+PASS  frontend healthy after 3s
+PASS  migrate one-shot job exited 0
+PASS  seed one-shot job exited 0
+
+== database isolation
+PASS  db publishes no host port
+PASS  internal network is internal:true
+PASS  db attached only to the internal network
+
+== non-root containers
+PASS  backend runs as node
+PASS  frontend runs as nginx
+
+== database roles
+PASS  app and owner roles are not superusers
+PASS  app role can read products
+PASS  app role denied: CREATE TABLE
+PASS  app role denied: DROP TABLE products
+PASS  app role denied: ALTER TABLE products
+PASS  app role denied: DELETE FROM products
+PASS  app role denied: UPDATE orders
+PASS  app role denied: read schema_migrations
+PASS  tables are owned by shopnest_owner
+
+== functional check through the frontend proxy
+PASS  order placed through the proxy; stock 40 -> 38
+
+== persistence: stop and start WITHOUT deleting the volume
+ Container shopnest-verify-frontend-1 Stopping 
+ Container shopnest-verify-frontend-1 Stopped 
+ Container shopnest-verify-frontend-1 Removing 
+ Container shopnest-verify-frontend-1 Removed 
+ Container shopnest-verify-backend-1 Stopping 
+ Container shopnest-verify-backend-1 Stopped 
+ Container shopnest-verify-backend-1 Removing 
+ Container shopnest-verify-backend-1 Removed 
+ Container shopnest-verify-seed-1 Stopping 
+ Container shopnest-verify-seed-1 Stopped 
+ Container shopnest-verify-seed-1 Removing 
+ Container shopnest-verify-seed-1 Removed 
+ Container shopnest-verify-migrate-1 Stopping 
+ Container shopnest-verify-migrate-1 Stopped 
+ Container shopnest-verify-migrate-1 Removing 
+ Container shopnest-verify-migrate-1 Removed 
+ Container shopnest-verify-db-1 Stopping 
+ Container shopnest-verify-db-1 Stopped 
+ Container shopnest-verify-db-1 Removing 
+ Container shopnest-verify-db-1 Removed 
+ Network shopnest-verify_web Removing 
+ Network shopnest-verify_internal Removing 
+ Network shopnest-verify_web Removed 
+ Network shopnest-verify_internal Removed 
+PASS  named volume shopnest-verify_pgdata still exists after down
+ Network shopnest-verify_internal Creating 
+ Network shopnest-verify_internal Created 
+ Network shopnest-verify_web Creating 
+ Network shopnest-verify_web Created 
+ Container shopnest-verify-db-1 Creating 
+ Container shopnest-verify-db-1 Created 
+ Container shopnest-verify-migrate-1 Creating 
+ Container shopnest-verify-migrate-1 Created 
+ Container shopnest-verify-seed-1 Creating 
+ Container shopnest-verify-seed-1 Created 
+ Container shopnest-verify-backend-1 Creating 
+ Container shopnest-verify-backend-1 Created 
+ Container shopnest-verify-frontend-1 Creating 
+ Container shopnest-verify-frontend-1 Created 
+ Container shopnest-verify-db-1 Starting 
+ Container shopnest-verify-db-1 Started 
+ Container shopnest-verify-db-1 Waiting 
+ Container shopnest-verify-db-1 Healthy 
+ Container shopnest-verify-migrate-1 Starting 
+ Container shopnest-verify-migrate-1 Started 
+ Container shopnest-verify-migrate-1 Waiting 
+ Container shopnest-verify-migrate-1 Exited 
+ Container shopnest-verify-seed-1 Starting 
+ Container shopnest-verify-seed-1 Started 
+ Container shopnest-verify-seed-1 Waiting 
+ Container shopnest-verify-seed-1 Exited 
+ Container shopnest-verify-backend-1 Starting 
+ Container shopnest-verify-backend-1 Started 
+ Container shopnest-verify-backend-1 Waiting 
+ Container shopnest-verify-backend-1 Healthy 
+ Container shopnest-verify-frontend-1 Starting 
+ Container shopnest-verify-frontend-1 Started 
+PASS  db healthy after 1s
+PASS  backend healthy after 0s
+PASS  frontend healthy after 6s
+PASS  order survived the restart
+PASS  stock unchanged; the idempotent seed did not reset it
+PASS  no duplicate products after re-seeding
+
+== result
+ALL CHECKS PASSED (28)
+
+== cleanup (throwaway project shopnest-verify only)
+exit=0

@@ -1,0 +1,60 @@
+# Ad-hoc backend validation of the Phase 2 remediation, run 2 (scratchpad script, NOT committed, NOT the project's test suite)
+# run 1 is kept in adhoc-backend-validation-run1-script-id-artifact.txt: 3 checks failed because the script's own failed INSERT consumed product id 1; the script now looks ids up by SKU
+# captured: 2026-11-20T03:37:03Z | node v24.15.0 | PostgreSQL 16.16 disposable shopnest_test | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: node adhoc-validation.mjs (TEST_DATABASE_URL=<redacted>)
+
+== 1. test-database guard (no connection is made for these)
+PASS  rejects a dev-style database name
+PASS  rejects a non-loopback host
+PASS  allows non-loopback only with explicit opt-in
+PASS  rejects a malformed URL
+PASS  rejects a non-postgres URL
+PASS  rejects an empty value
+PASS  error message never contains the password
+PASS  accepts the real test URL
+== 2. per-run schema isolation
+PASS  two runs get different schemas  [test_2b63de789214 / test_604b1faf3a87]
+PASS  migrating one schema leaves the other empty
+PASS  public schema has no tables (never touched)
+== 3. migrations 002 and 003 (in a per-run schema)
+PASS  index order_items_product_id_idx exists
+PASS  products.currency has no default
+PASS  inserting a product without a currency now fails
+PASS  migration 003 is a no-op where shopnest_app does not exist
+== 4. pool error handling (B1) and timeouts
+{"time":"2026-11-20T03:37:04.581Z","level":"error","msg":"idle database client error","error":"terminating connection due to administrator command"}
+PASS  process survived the server dropping an idle connection
+PASS  the error was logged, not thrown  [terminating connection due to administrator command]
+PASS  the pool recovers and serves the next query
+PASS  statement_timeout cancels a slow query  [canceling statement due to statement timeout]
+PASS  exhausted pool fails fast instead of hanging  [timeout exceeded when trying to connect after 310ms]
+PASS  searchPath rejects an unsafe schema name
+== 5. API id-range validation and product detail
+PASS  GET /api/products/99999999999 -> 400  [got 400]
+PASS  GET /api/products/2147483648 -> 400  [got 400]
+PASS  GET /api/products/1e2 -> 400  [got 400]
+PASS  GET /api/products/0x10 -> 400  [got 400]
+PASS  GET /api/products/%201 -> 400  [got 400]
+PASS  GET /api/products/0 -> 400  [got 400]
+PASS  GET /api/products/-1 -> 400  [got 400]
+PASS  GET /api/products/abc -> 400  [got 400]
+PASS  GET /api/products/2147483647 -> 404 (valid int4, not found)
+PASS  GET /api/products/1 -> 200 with the public shape
+PASS  order with productId 2147483648 -> 400
+PASS  order with productId 2147483647 -> 422 unknown_product
+== 6. currency handling in orders
+PASS  order currency comes from the product (BDT)
+PASS  mixed-currency order -> 422 mixed_currency  [got 422]
+== 7. seed safety
+PASS  allowed in development
+PASS  allowed in test
+PASS  blocked in production
+PASS  blocked when NODE_ENV is unset
+PASS  blocked for staging
+PASS  production needs the exact flag value
+PASS  production allowed only with ALLOW_PRODUCTION_SEED=true
+PASS  scripts/seed.js with {"NODE_ENV":"production"} exits 1 before touching the database
+PASS  scripts/seed.js with {} exits 1 before touching the database
+
+ALL AD-HOC CHECKS PASSED
+exit=0

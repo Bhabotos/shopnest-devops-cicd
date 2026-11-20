@@ -1,0 +1,38 @@
+# Frontend tests (run 2, after fixing the non-breaking-space expectation)
+# captured: 2026-11-20T03:33:12Z | node v24.15.0 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes
+# command: npx vitest run --reporter=verbose (frontend)
+
+
+ RUN  v5.1.1 D:/DevOps-Projects/shopnest-devops-cicd/frontend
+
+ ✓ test/cart.test.js > cartReducer > adds a new product with quantity 1 2ms
+ ✓ test/cart.test.js > cartReducer > increments quantity when the product is added again 0ms
+ ✓ test/cart.test.js > cartReducer > never exceeds available stock 0ms
+ ✓ test/cart.test.js > cartReducer > never exceeds the per-line maximum 0ms
+ ✓ test/cart.test.js > cartReducer > does not add an out-of-stock product 0ms
+ ✓ test/cart.test.js > cartReducer > clamps quantity to a minimum of 1 instead of removing the line 0ms
+ ✓ test/cart.test.js > cartReducer > removes and clears lines 1ms
+ ✓ test/cart.test.js > cart totals > sums price times quantity and counts items 0ms
+ ✓ test/api.test.js > api client > fetchProducts unwraps the products array 4ms
+ ✓ test/api.test.js > api client > placeOrder POSTs JSON and returns the order 1ms
+ ✓ test/api.test.js > api client > throws an ApiError carrying the server message and code 2ms
+ ✓ test/api.test.js > api client > uses a generic message when the error body is not JSON 1ms
+ ✓ test/format.test.js > formatMoney > converts minor units to a major-unit amount with two decimals 21ms
+ ✓ test/format.test.js > formatMoney > formats zero 0ms
+ ✓ test/format.test.js > formatMoney > uses lakh grouping for large amounts 0ms
+ ✓ test/app.test.jsx > catalog > shows a loading state and then the products 56ms
+ ✓ test/app.test.jsx > catalog > marks out-of-stock products and offers no add button for them 48ms
+ ✓ test/app.test.jsx > catalog > shows an error with a working retry when loading fails 69ms
+ ✓ test/app.test.jsx > cart and checkout flow > updates the cart count and shows the total 126ms
+ ✓ test/app.test.jsx > cart and checkout flow > shows an empty-cart message after removing the last item 203ms
+ ✓ test/app.test.jsx > cart and checkout flow > blocks submission and shows errors for invalid customer details 234ms
+ ✓ test/app.test.jsx > cart and checkout flow > places an order, clears the cart and shows the confirmation 939ms
+ ✓ test/app.test.jsx > cart and checkout flow > keeps the cart and shows the server message when the order fails 919ms
+ ✓ test/app.test.jsx > validateCustomer > returns no errors for valid details 0ms
+ ✓ test/app.test.jsx > validateCustomer > flags a short address 0ms
+
+ Test Files  4 passed (4)
+      Tests  25 passed (25)
+   Start at  09:33:14
+   Duration  5.03s (environment 59%, tests 24%, setup 15%, import 1%, transform 1%)
+

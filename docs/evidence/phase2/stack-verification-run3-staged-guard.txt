@@ -1,0 +1,195 @@
+# Stack verification run 3: Docker preflight + staged start with the throwaway-target guard before any database write, G1 DELETE, G2 TRUNCATE, G3 ownership
+# captured: 2026-11-20T04:39:52Z | docker 29.6.2 | compose 5.3.1 | branch feature/phase2-app-code @ dec31e1 + uncommitted changes | script sha1 d6b8dc0f63f4
+# command: bash deploy/scripts/verify-stack.sh   (run from the repository root in Git Bash; passwords are random, process-local and never printed)
+# earlier evidence kept unchanged: stack-verification.txt (38 checks) and stack-verification-run1-table-level-update.txt (28 checks)
+
+
+== docker safety preflight
+PASS  DOCKER_HOST is not set
+Docker context (active): desktop-linux
+Docker endpoint: npipe:////./pipe/dockerDesktopLinuxEngine
+PASS  Docker endpoint is local (npipe)
+
+== start (fresh throwaway project)
+ Network shopnest-verify_internal Creating 
+ Network shopnest-verify_internal Created 
+ Volume shopnest-verify_pgdata Creating 
+ Volume shopnest-verify_pgdata Created 
+ Container shopnest-verify-db-1 Creating 
+ Container shopnest-verify-db-1 Created 
+PASS  target is the throwaway project shopnest-verify (db container created, not started)
+ Container shopnest-verify-db-1 Starting 
+ Container shopnest-verify-db-1 Started 
+PASS  db healthy after 6s
+PASS  target re-confirmed after the db became healthy, before migrate, seed or any other write
+ Image shopnest-verify-migrate Building 
+ Image shopnest-verify-seed Building 
+ Image shopnest-verify-backend Building 
+ Image shopnest-verify-frontend Building 
+ Image shopnest-verify-seed Built 
+ Image shopnest-verify-backend Built 
+ Image shopnest-verify-frontend Built 
+ Image shopnest-verify-migrate Built 
+ Network shopnest-verify_web Creating 
+ Network shopnest-verify_web Created 
+ Container shopnest-verify-db-1 Running 
+ Container shopnest-verify-migrate-1 Creating 
+ Container shopnest-verify-migrate-1 Created 
+ Container shopnest-verify-seed-1 Creating 
+ Container shopnest-verify-seed-1 Created 
+ Container shopnest-verify-backend-1 Creating 
+ Container shopnest-verify-backend-1 Created 
+ Container shopnest-verify-frontend-1 Creating 
+ Container shopnest-verify-frontend-1 Created 
+ Container shopnest-verify-db-1 Waiting 
+ Container shopnest-verify-db-1 Healthy 
+ Container shopnest-verify-migrate-1 Starting 
+ Container shopnest-verify-migrate-1 Started 
+ Container shopnest-verify-migrate-1 Waiting 
+ Container shopnest-verify-migrate-1 Exited 
+ Container shopnest-verify-seed-1 Starting 
+ Container shopnest-verify-seed-1 Started 
+ Container shopnest-verify-seed-1 Waiting 
+ Container shopnest-verify-seed-1 Exited 
+ Container shopnest-verify-backend-1 Starting 
+ Container shopnest-verify-backend-1 Started 
+ Container shopnest-verify-backend-1 Waiting 
+ Container shopnest-verify-backend-1 Healthy 
+ Container shopnest-verify-frontend-1 Starting 
+ Container shopnest-verify-frontend-1 Started 
+PASS  stack started
+
+== health checks
+PASS  db healthy after 1s
+PASS  backend healthy after 0s
+PASS  frontend healthy after 5s
+PASS  migrate one-shot job exited 0
+PASS  seed one-shot job exited 0
+
+== database isolation
+PASS  db publishes no host port
+PASS  internal network is internal:true
+PASS  db attached only to the internal network
+
+== non-root containers
+PASS  backend runs as node
+PASS  frontend runs as nginx
+
+== database roles
+PASS  app and owner roles are not superusers
+PASS  app role can read products
+PASS  app role denied: CREATE TABLE
+PASS  app role denied: DROP TABLE products
+PASS  app role denied: ALTER TABLE products
+PASS  app role denied: DELETE FROM products
+PASS  app role denied: UPDATE orders
+PASS  app role denied: read schema_migrations
+PASS  app role can update products.stock
+PASS  app role permission denied: UPDATE products.price_minor
+PASS  app role permission denied: UPDATE products.name
+PASS  app role permission denied: UPDATE products.currency
+PASS  app role permission denied: UPDATE products.sku
+PASS  app role permission denied: UPDATE products.description
+PASS  app role permission denied: UPDATE products.image_url
+PASS  app role permission denied: INSERT INTO products
+PASS  tables are owned by shopnest_owner
+PASS  products is owned by shopnest_owner
+PASS  orders is owned by shopnest_owner
+PASS  order_items is owned by shopnest_owner
+PASS  schema_migrations is owned by shopnest_owner
+
+== destructive statements are denied (DELETE, TRUNCATE)
+PASS  catalog: shopnest_app has no DELETE privilege on products
+PASS  catalog: shopnest_app has no TRUNCATE privilege on products
+PASS  app role permission denied: DELETE FROM products
+PASS  app role permission denied: TRUNCATE products
+PASS  catalog: shopnest_app has no DELETE privilege on orders
+PASS  catalog: shopnest_app has no TRUNCATE privilege on orders
+PASS  app role permission denied: DELETE FROM orders
+PASS  app role permission denied: TRUNCATE orders
+PASS  catalog: shopnest_app has no DELETE privilege on order_items
+PASS  catalog: shopnest_app has no TRUNCATE privilege on order_items
+PASS  app role permission denied: DELETE FROM order_items
+PASS  app role permission denied: TRUNCATE order_items
+
+== functional check through the frontend proxy
+PASS  order placed through the proxy; stock 40 -> 38
+
+== roles actually in use (read from the server's own session list)
+PASS  the running API holds connections as shopnest_app only (not shopnest_owner or shopnest_admin)
+PASS  schema_migrations is owned by shopnest_owner (migrations ran as the owner)
+
+== persistence: stop and start WITHOUT deleting the volume
+ Container shopnest-verify-frontend-1 Stopping 
+ Container shopnest-verify-frontend-1 Stopped 
+ Container shopnest-verify-frontend-1 Removing 
+ Container shopnest-verify-frontend-1 Removed 
+ Container shopnest-verify-backend-1 Stopping 
+ Container shopnest-verify-backend-1 Stopped 
+ Container shopnest-verify-backend-1 Removing 
+ Container shopnest-verify-backend-1 Removed 
+ Container shopnest-verify-seed-1 Stopping 
+ Container shopnest-verify-seed-1 Stopped 
+ Container shopnest-verify-seed-1 Removing 
+ Container shopnest-verify-seed-1 Removed 
+ Container shopnest-verify-migrate-1 Stopping 
+ Container shopnest-verify-migrate-1 Stopped 
+ Container shopnest-verify-migrate-1 Removing 
+ Container shopnest-verify-migrate-1 Removed 
+ Container shopnest-verify-db-1 Stopping 
+ Container shopnest-verify-db-1 Stopped 
+ Container shopnest-verify-db-1 Removing 
+ Container shopnest-verify-db-1 Removed 
+ Network shopnest-verify_internal Removing 
+ Network shopnest-verify_web Removing 
+ Network shopnest-verify_internal Removed 
+ Network shopnest-verify_web Removed 
+PASS  named volume shopnest-verify_pgdata still exists after down
+ Network shopnest-verify_internal Creating 
+ Network shopnest-verify_internal Created 
+ Container shopnest-verify-db-1 Creating 
+ Container shopnest-verify-db-1 Created 
+PASS  restart: target confirmed (db container recreated, not started)
+ Container shopnest-verify-db-1 Starting 
+ Container shopnest-verify-db-1 Started 
+PASS  db healthy after 5s
+PASS  restart: target re-confirmed after the db became healthy, before migrate and seed run again
+ Network shopnest-verify_web Creating 
+ Network shopnest-verify_web Created 
+ Container shopnest-verify-db-1 Running 
+ Container shopnest-verify-migrate-1 Creating 
+ Container shopnest-verify-migrate-1 Created 
+ Container shopnest-verify-seed-1 Creating 
+ Container shopnest-verify-seed-1 Created 
+ Container shopnest-verify-backend-1 Creating 
+ Container shopnest-verify-backend-1 Created 
+ Container shopnest-verify-frontend-1 Creating 
+ Container shopnest-verify-frontend-1 Created 
+ Container shopnest-verify-db-1 Waiting 
+ Container shopnest-verify-db-1 Healthy 
+ Container shopnest-verify-migrate-1 Starting 
+ Container shopnest-verify-migrate-1 Started 
+ Container shopnest-verify-migrate-1 Waiting 
+ Container shopnest-verify-migrate-1 Exited 
+ Container shopnest-verify-seed-1 Starting 
+ Container shopnest-verify-seed-1 Started 
+ Container shopnest-verify-seed-1 Waiting 
+ Container shopnest-verify-seed-1 Exited 
+ Container shopnest-verify-backend-1 Starting 
+ Container shopnest-verify-backend-1 Started 
+ Container shopnest-verify-backend-1 Waiting 
+ Container shopnest-verify-backend-1 Healthy 
+ Container shopnest-verify-frontend-1 Starting 
+ Container shopnest-verify-frontend-1 Started 
+PASS  db healthy after 0s
+PASS  backend healthy after 1s
+PASS  frontend healthy after 5s
+PASS  order survived the restart
+PASS  stock unchanged; the idempotent seed did not reset it
+PASS  no duplicate products after re-seeding
+
+== result
+ALL CHECKS PASSED (62)
+
+== cleanup (throwaway project shopnest-verify only)
+exit=0
