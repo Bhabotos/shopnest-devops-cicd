@@ -1,0 +1,16 @@
+2026-11-20T12:04:34Z manual rollback of staging to aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-11-20T12:04:34Z ensuring the database is up (it is never recreated or restarted by a rollback)
+ Container shopnest-demo-staging-db-1 Running 
+2026-11-20T12:04:35Z release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (manual rollback): live=green (bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb), target colour=blue
+ Container shopnest-demo-staging-backend-blue-1 Creating 
+ Container shopnest-demo-staging-backend-blue-1 Created 
+ Container shopnest-demo-staging-backend-blue-1 Starting 
+ Container shopnest-demo-staging-backend-blue-1 Started 
+2026-11-20T12:04:36Z waiting for backend-blue to report healthy and commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-11-20T12:04:37Z backend-blue validated; switching traffic
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/11/20 12:04:39 [notice] 220#220: signal process started
+2026-11-20T12:04:40Z draining backend-green for 10s before stopping it
+2026-11-20T12:04:50Z release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa is live on blue
+2026-11-20T12:04:51Z ROLLBACK SUCCEEDED: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa is live on staging

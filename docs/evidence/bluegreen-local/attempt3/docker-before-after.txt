@@ -1,0 +1,10 @@
+# Docker before/after comparison for attempt 3 of the local Blue/Green rehearsal
+# before snapshot taken 2026-11-20T12:00:39Z (just before the run); after snapshot taken after the run finished (2026-11-20T12:05:22Z)
+# engine: Docker Desktop 29.6.2, context desktop-linux (local named pipe); compared names (and IDs for images and networks)
+
+container-names  before=29  after=29  identical
+images           before=60  after=60  identical
+networks         before=14  after=14  identical
+volumes          before=26  after=26  identical
+
+remaining shopnest-demo resources after the run: containers=0 volumes=0 networks=0 release-image-tags=0 listeners-on-18081=0

@@ -1,0 +1,39 @@
+
+== build the three releases (A and B good; C starts and exits at once)
+PASS  images built
+
+== 1. deploy release A with the demo catalogue
+PASS  A is live
+
+== 2. deploy release B while requests flow
+PASS  B is live
+PASS  the database container was not recreated or restarted by the B deploy
+PASS  request loop during the B deploy: no failed request
+
+== 3. deploy the deliberately broken release C (must fail and leave B live)
+PASS  broken release C was rejected
+PASS  B is still live
+PASS  the database container was not recreated or restarted by the failed C attempt
+PASS  request loop during the failed C deploy: no failed request
+
+== 4. manual rollback to release A
+PASS  A is live again
+PASS  the database container was not recreated or restarted by the rollback
+PASS  request loop during the rollback: no failed request
+
+== release history
+environment : staging
+live colour : blue
+live release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+last good   : aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+history (newest last, columns: time env sha status detail):
+2026-11-20T12:01:21Z staging aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa deployed deploy; live on blue; replaced nothing
+2026-11-20T12:01:40Z staging bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb deployed deploy; live on green; replaced aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-11-20T12:04:29Z staging cccccccccccccccccccccccccccccccccccccccc failed pre-switch validation failed; live release unchanged
+2026-11-20T12:04:40Z staging aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa deployed manual rollback; live on blue; replaced bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+== result
+ALL CHECKS PASSED (12). Output saved under <REPO>/docs/evidence/bluegreen-local/attempt3
+
+== cleanup (throwaway project shopnest-demo-staging only)
+demo exit=0

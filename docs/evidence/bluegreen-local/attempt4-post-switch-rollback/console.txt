@@ -1,0 +1,31 @@
+
+== build releases A and D (D is a healthy backend whose frontend files have no index.html)
+PASS  images built
+
+== 1. deploy release A with the demo catalogue
+PASS  A is live
+
+== 5. deploy release D (passes the pre-switch checks, fails the live check after traffic moved)
+PASS  release D was reported as failed
+PASS  D passed the pre-switch validation (traffic did move)
+PASS  the post-switch check failed and the automatic rollback completed
+PASS  A is live again after the automatic rollback
+PASS  the database container was not recreated or restarted by the automatic rollback
+PASS  the failed colour was stopped
+PASS  the release history records the failure and restored=1
+INFO  SUMMARY url=http://127.0.0.1:18081/ requests=181 failed=83  (failures are expected while D was live)
+
+== release history
+environment : staging
+live colour : blue
+live release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+last good   : aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+history (newest last, columns: time env sha status detail):
+2026-11-20T14:02:13Z staging aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa deployed deploy; live on blue; replaced nothing
+2026-11-20T14:02:50Z staging dddddddddddddddddddddddddddddddddddddddd failed post-switch verification failed; automatic rollback to aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (restored=1)
+
+== result
+ALL CHECKS PASSED (9). Output saved under <REPO>/docs/evidence/bluegreen-local/attempt4-post-switch-rollback
+
+== cleanup (throwaway project shopnest-demo-staging only)
+demo exit=0

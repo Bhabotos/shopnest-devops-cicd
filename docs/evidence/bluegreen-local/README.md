@@ -1,0 +1,38 @@
+# Local blue/green rehearsal evidence
+
+Everything here comes from the **local Docker Desktop rehearsal** (`deploy/scripts/demo-bluegreen-local.sh`),
+run on a developer machine against a throwaway Compose project (`shopnest-demo-staging`), a loopback-only
+port (18081), a temporary home directory and random database passwords. **None of it comes from AWS, EC2,
+staging or a GitHub Actions deployment**; those have not run. See `SANITIZED.md` for the (small) edits made
+for the public repository.
+
+## Release identifiers are synthetic
+
+`aaaa…`, `bbbb…`, `cccc…` and `dddd…` (forty repeated hex characters) are made-up release SHAs used only
+by the rehearsal. They are not commits of this repository. Each one labels a locally built image
+(`shopnest-backend:<sha>`, built from the same `backend/` source) so that the scripts' SHA, image-label and
+`/version` checks have something to compare.
+
+## What each attempt shows
+
+| Attempt | Scenario | Result | Folder |
+|---|---|---|---|
+| 1 | Full scenario | **Failed** at deploy A: Windows cannot hold mode 600 on `secrets.env`, and the script rightly refused. Kept as failed-run evidence | `attempt1-failed-secrets-mode600/` |
+| 2 | Full scenario, with the loose-secrets override authorised for that one run | **Failed**: during deploy B, 1 of 213 requests failed (HTTP 500 plus a 2.5 s stall) because deploy B recreated the database container. The run stopped there. Led to the `--no-recreate` and stable-mount fixes | `attempt2/` |
+| 3 | Full scenario | **Passed 12 of 12**: A live, B deployed while requests flowed (238 of 238 HTTP 200), broken release C rejected before any traffic moved (107 of 107), manual rollback to A (161 of 161), database container never recreated | `attempt3/` |
+| 4 | `--scenario post-switch` | **Passed 9 of 9**: release D passed the pre-switch checks, traffic moved, the live check failed, and the **automatic rollback** put A back and stopped D. The database was never recreated. **Requests to `/` failed while D was live: 83 of 181** (about 20 s). The failure window is recorded, not hidden | `attempt4-post-switch-rollback/` |
+
+Attempt 4 shows that a failure *after* the switch is detected and reversed automatically. It also shows
+that this case is **not** zero-impact: until the live check fails and traffic returns, users of the
+affected path see errors. Only failures caught before the switch (attempt 3, release C) cost no request.
+
+## Kinds of evidence (do not mix them up)
+
+| Kind | Where | What it proves | What it does not prove |
+|---|---|---|---|
+| Offline tests | `deploy/tests/bluegreen-logic.test.sh` (98 checks, fake Docker; run in CI by the "Deploy scripts and Compose" job) | the scripts' decisions: which colour, when traffic moves, what happens on failure, the loose-secrets guard | that real containers, nginx or Compose behave |
+| Real Docker rehearsal | attempts 3 and 4 here | real containers, real nginx reloads and a real database on a local engine | anything on AWS, staging, SSH, OIDC or the CD workflow |
+| Failed attempts | attempts 1 and 2 | the defects that were found and fixed | – |
+
+Not verified anywhere yet: AWS, EC2, staging, production, the CD and rollback workflows, OIDC and the
+temporary SSH rule, and Node 22 inside the containers (images run Node 24).
