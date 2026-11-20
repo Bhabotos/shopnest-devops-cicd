@@ -38,6 +38,8 @@ yarn-error.log*
 docker-compose.override.yml
 pgdata/
 *.log
+# Evidence logs are deliberate, reviewed project evidence; every other *.log stays ignored.
+!docs/evidence/**/*.log
 
 # OS / editors
 .DS_Store

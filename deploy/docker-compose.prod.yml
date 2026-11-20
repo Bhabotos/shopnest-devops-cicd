@@ -1,0 +1,111 @@
+# Blue/green stack for ONE environment (staging or production). The deploy scripts run it as a
+# separate Compose project per environment ("shopnest-staging", "shopnest-production"), so each has
+# its own networks, containers and database volume on the shared instance.
+#
+# Never run a plain `docker compose up` here: it would start BOTH colours. The scripts always name
+# the services they want (db, nginx, backend-blue or backend-green, migrate, seed).
+#
+# Variables come from the scripts' environment (see deploy/scripts/lib/bluegreen-lib.sh):
+#   ENV_DIR, HTTP_PORT, BLUE_TAG, GREEN_TAG, MIGRATE_TAG, APP_VERSION, LOG_LEVEL   (not secret)
+#   POSTGRES_PASSWORD, DB_OWNER_PASSWORD, DB_APP_PASSWORD   (secret, from the server-side secrets.env)
+# Database passwords must be letters and digits only so they can sit inside DATABASE_URL unencoded.
+
+x-backend: &backend
+  environment: &backend-env
+    DATABASE_URL: postgres://shopnest_app:${DB_APP_PASSWORD:?DB_APP_PASSWORD is required}@db:5432/shopnest
+    APP_VERSION: ${APP_VERSION:-release}
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+  networks: [internal, edge]
+  restart: unless-stopped
+  stop_grace_period: 20s
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16.16-alpine3.24@sha256:1d5b02d3a9941fbd52437db4107f8c52d6297dac553ca1e5c299ebb3756b4857
+    environment:
+      POSTGRES_DB: shopnest
+      POSTGRES_USER: shopnest_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?DB_OWNER_PASSWORD is required}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?DB_APP_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # A STABLE host path (staged by the scripts from the bundle), never a path inside the release
+      # bundle: a mount that changes with every release makes Compose recreate this container.
+      - ${ENV_DIR:?ENV_DIR is required}/db-init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    # No "ports:" on purpose: the database is reachable only on the internal network.
+    restart: unless-stopped
+    healthcheck:
+      # TCP on purpose: the image's init-time server listens on the Unix socket only.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U shopnest_admin -d shopnest"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot jobs, started explicitly by the scripts with `run --rm --no-deps`.
+  # Migrations run as the owner role BEFORE traffic moves, so they must stay backward compatible
+  # with the release that is still live (add first, remove in a later release).
+  migrate:
+    image: shopnest-backend:${MIGRATE_TAG:-none}
+    command: ["node", "scripts/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://shopnest_owner:${DB_OWNER_PASSWORD:?DB_OWNER_PASSWORD is required}@db:5432/shopnest
+    networks: [internal]
+    restart: "no"
+
+  # Demo catalogue, only when an operator asks for it with --seed (see bluegreen-deploy.sh).
+  seed:
+    image: shopnest-backend:${MIGRATE_TAG:-none}
+    command: ["node", "scripts/seed.js"]
+    environment:
+      DATABASE_URL: postgres://shopnest_owner:${DB_OWNER_PASSWORD:?DB_OWNER_PASSWORD is required}@db:5432/shopnest
+      NODE_ENV: ${SEED_NODE_ENV:-development}
+      ALLOW_PRODUCTION_SEED: ${ALLOW_PRODUCTION_SEED:-}
+    networks: [internal]
+    restart: "no"
+
+  backend-blue:
+    <<: *backend
+    image: shopnest-backend:${BLUE_TAG:-none}
+    environment:
+      <<: *backend-env
+      GIT_SHA: ${BLUE_TAG:-none}
+
+  backend-green:
+    <<: *backend
+    image: shopnest-backend:${GREEN_TAG:-none}
+    environment:
+      <<: *backend-env
+      GIT_SHA: ${GREEN_TAG:-none}
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.29.8-alpine3.23@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
+    ports:
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:?HTTP_PORT is required}:8080"
+    volumes:
+      # All stable host paths under the environment directory (see the db service above).
+      # Directories (not single files), so atomic renames made by the scripts are visible inside.
+      - ${ENV_DIR}/nginx/conf:/etc/nginx/conf.d:ro
+      - ${ENV_DIR}/nginx/upstream:/etc/nginx/upstream:ro
+      - ${ENV_DIR}/frontend:/srv/frontend:ro
+    networks: [edge]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8081/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  # Backend database access only; no route to the outside.
+  internal:
+    internal: true
+  # Nginx and the backends. The only network with a published port (nginx).
+  edge: {}
+
+volumes:
+  pgdata:

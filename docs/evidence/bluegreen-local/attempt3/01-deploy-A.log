@@ -1,0 +1,35 @@
+2026-11-20T12:01:03Z deploy aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to staging (bundle /tmp/tmp.80Hhei3Ucc/bundles/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+2026-11-20T12:01:03Z bundle verified
+2026-11-20T12:01:08Z backend image shopnest-backend:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa loaded
+2026-11-20T12:01:08Z ensuring the database is up (it is never recreated or restarted by a deploy)
+ Network shopnest-demo-staging_internal Creating 
+ Network shopnest-demo-staging_internal Created 
+ Volume shopnest-demo-staging_pgdata Creating 
+ Volume shopnest-demo-staging_pgdata Created 
+ Container shopnest-demo-staging-db-1 Creating 
+ Container shopnest-demo-staging-db-1 Created 
+ Container shopnest-demo-staging-db-1 Starting 
+ Container shopnest-demo-staging-db-1 Started 
+2026-11-20T12:01:12Z applying migrations (owner role; must stay compatible with the live release)
+ Container shopnest-demo-staging-migrate-run-67adc8699b2a Creating 
+ Container shopnest-demo-staging-migrate-run-67adc8699b2a Created 
+applied: 001_init.sql, 002_index_and_currency.sql, 003_app_role_grants.sql
+2026-11-20T12:01:14Z seeding the demo catalogue (idempotent)
+ Container shopnest-demo-staging-seed-run-11589b948e68 Creating 
+ Container shopnest-demo-staging-seed-run-11589b948e68 Created 
+seed complete
+2026-11-20T12:01:16Z release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (deploy): live=none (none), target colour=blue
+ Network shopnest-demo-staging_edge Creating 
+ Network shopnest-demo-staging_edge Created 
+ Container shopnest-demo-staging-backend-blue-1 Creating 
+ Container shopnest-demo-staging-backend-blue-1 Created 
+ Container shopnest-demo-staging-backend-blue-1 Starting 
+ Container shopnest-demo-staging-backend-blue-1 Started 
+2026-11-20T12:01:17Z waiting for backend-blue to report healthy and commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+2026-11-20T12:01:19Z backend-blue validated; switching traffic
+ Container shopnest-demo-staging-nginx-1 Creating 
+ Container shopnest-demo-staging-nginx-1 Created 
+ Container shopnest-demo-staging-nginx-1 Starting 
+ Container shopnest-demo-staging-nginx-1 Started 
+2026-11-20T12:01:21Z release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa is live on blue
+2026-11-20T12:01:21Z DEPLOY SUCCEEDED: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa is live on staging

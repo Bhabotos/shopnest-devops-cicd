@@ -1,0 +1,7 @@
+environment : staging
+live colour : blue
+live release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+last good   : aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+history (newest last, columns: time env sha status detail):
+2026-11-20T14:02:13Z staging aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa deployed deploy; live on blue; replaced nothing
+2026-11-20T14:02:50Z staging dddddddddddddddddddddddddddddddddddddddd failed post-switch verification failed; automatic rollback to aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (restored=1)

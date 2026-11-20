@@ -1,0 +1,10 @@
+
+== build the three releases (A and B good; C starts and exits at once)
+PASS  images built
+
+== 1. deploy release A with the demo catalogue
+2026-11-20T11:49:11Z ERROR: <LOCAL_TEMP>/tmp.Vpm93si4Az/home/staging/secrets.env must have mode 600
+FAIL  deploy A failed
+
+== cleanup (throwaway project shopnest-demo-staging only)
+demo exit=1

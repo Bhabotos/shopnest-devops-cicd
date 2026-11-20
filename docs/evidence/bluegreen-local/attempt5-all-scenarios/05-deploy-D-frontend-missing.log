@@ -1,0 +1,4 @@
+2026-11-20T14:25:27Z WARNING: BG_ALLOW_LOOSE_SECRETS=1, the secrets file mode is not checked (local rehearsal shopnest-demo-staging)
+2026-11-20T14:25:27Z deploy dddddddddddddddddddddddddddddddddddddddd to staging (bundle /tmp/tmp.DPMxWyYP9m/bundles/dddddddddddddddddddddddddddddddddddddddd)
+2026-11-20T14:25:27Z bundle verified
+2026-11-20T14:25:27Z ERROR: frontend-dist has no non-empty index.html; refusing before anything is changed

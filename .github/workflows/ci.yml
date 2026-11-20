@@ -126,3 +126,76 @@ jobs:
           persist-credentials: false
       - name: Build image
         run: docker build --tag shopnest-backend:ci backend
+
+  # PROPOSED NEW JOB for .github/workflows/ci.yml (appended under `jobs:`). It does not change the
+  # five existing jobs. It becomes a required check only if the user approves a branch-protection change.
+  deploy-scripts:
+    name: Deploy scripts and Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          find deploy -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: ShellCheck
+        # ShellCheck is preinstalled on ubuntu-latest; its version is printed so the run records it.
+        run: |
+          shellcheck --version
+          find deploy -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
+      - name: Offline blue/green tests (fake Docker, no containers)
+        run: bash deploy/tests/bluegreen-logic.test.sh
+      - name: Production Compose is valid and the database is private
+        env:
+          # Throwaway placeholders that exist only for this step; no real secret is involved.
+          ENV_DIR: /tmp/shopnest-ci
+          HTTP_PORT: "18081"
+          POSTGRES_PASSWORD: ci0placeholder0aaaa
+          DB_OWNER_PASSWORD: ci0placeholder0bbbb
+          DB_APP_PASSWORD: ci0placeholder0cccc
+        run: |
+          set -euo pipefail
+          docker compose -p ci -f deploy/docker-compose.prod.yml config --format json > compose.json
+          node -e '
+            const c = JSON.parse(require("fs").readFileSync("compose.json", "utf8"));
+            const bad = [];
+            const published = Object.entries(c.services).filter(([, s]) => (s.ports || []).length).map(([n]) => n);
+            if (published.join() !== "nginx") bad.push("only nginx may publish a port, found: " + published.join());
+            if (!c.networks.internal || c.networks.internal.internal !== true) bad.push("the internal network must be internal: true");
+            if (Object.keys(c.services.db.networks || {}).join() !== "internal") bad.push("db must be on the internal network only");
+            if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
+            console.log("compose ok: only nginx publishes a port; db is internal-only");
+          '
+      - name: The loose-secrets bypass and the test database stay out of the release path
+        run: |
+          set -euo pipefail
+          if grep -rn --exclude=ci.yml 'BG_ALLOW_LOOSE_SECRETS' .github deploy/env deploy/docker-compose.prod.yml; then
+            echo "::error::BG_ALLOW_LOOSE_SECRETS must not appear in workflows, env files or the production Compose file"; exit 1
+          fi
+          if grep -rnE --exclude=ci.yml 'docker-compose\.(test|dev)\.yml' .github deploy/scripts/lib deploy/scripts/bluegreen-deploy.sh deploy/scripts/rollback.sh; then
+            echo "::error::the deploy path must not reference the dev or test Compose files"; exit 1
+          fi
+      - name: rollback.yml keeps the same SSH steps as cd.yml
+        run: |
+          set -euo pipefail
+          # The AWS credentials, "Open SSH" and "Prepare SSH" steps: from the first one to the step that
+          # follows them. <file> <end marker> <which occurrence>
+          block() {
+            awk -v end="$2" -v want="$3" '
+              /- name: Configure AWS credentials/ { n++; on = (n == want) }
+              on && index($0, end) { exit }
+              on
+            ' "$1"
+          }
+          block .github/workflows/rollback.yml '- name: Run the rollback on the server' 1 > rollback.ssh
+          block .github/workflows/cd.yml '- name: Upload the release and run the blue/green deploy' 1 > cd-staging.ssh
+          block .github/workflows/cd.yml '- name: Upload the release and run the blue/green deploy' 2 > cd-production.ssh
+          test -s rollback.ssh && test -s cd-staging.ssh && test -s cd-production.ssh
+          diff -u cd-staging.ssh rollback.ssh
+          diff -u cd-production.ssh rollback.ssh
+          echo "SSH steps are identical in cd.yml (both jobs) and rollback.yml"
