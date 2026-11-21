@@ -1,8 +1,9 @@
 # Part H: three deliberate pipeline failures, root causes and recoveries
 
 > **Work in progress: evidence is incomplete.** Every fact below comes from the Git history or the GitHub Actions logs and was read
-> on 2026-11-21. Anything that is not on record is marked **PENDING YOUR INPUT** (the project owner supplies it). Copilot prompts and answers
-> are placeholders: none is invented. Screenshots are listed as to-do items: none exists yet.
+> on 2026-11-21, or is the project owner's statement and is labelled as such. Items the owner can still supply (the screenshots) are marked **PENDING YOUR INPUT**.
+> Items that cannot be recovered are marked **Not recalled / Evidence unavailable**: the owner could not recall them on 2026-11-21 and no record of them exists in Git, GitHub or the repository.
+> Nothing is reconstructed: no Copilot prompt, answer or troubleshooting step is invented. Screenshots are listed as to-do items: none exists yet.
 
 Repository: https://github.com/Bhabotos/shopnest-devops-cicd
 
@@ -33,7 +34,8 @@ pipeline-demo.yml"), on branch `demo/yaml-syntax-error`, one line in `.github/wo
 -    runs-on: ubuntu-latest
 +    runs-on ubuntu-latest
 ```
-(the colon after `runs-on` was removed).
+(the colon after `runs-on` was removed). The commit message gives the position as **line 19**, in the `backend-tests` job. Both failure 1 commits (`7c526dc` and `d2b645c`) carry a
+`Co-Authored-By: Claude Sonnet 5.5` trailer in Git, which means they were created with Claude Code's assistance.
 
 **Observed error.** Run 44884178546 (event `push`, branch `demo/yaml-syntax-error`, commit `7c526dc`) finished as `failure` with **0 jobs**. The GitHub CLI
 (`gh run view`) reports for this run: *"This run likely failed because of a workflow file issue."* The text that GitHub's web page shows for this run, including the line number of
@@ -43,6 +45,11 @@ the YAML error, was not read and is **PENDING YOUR INPUT** (screenshot).
 the workflow's `name:` value. The recovered run 44884710861, on the fixed commit `d2b645c`, is named `pipeline-demo`. A run named with the file path is consistent with GitHub being unable to
 read the workflow file, which matches the syntax error. This is an observation from the API: it does not give the error message or the line number, which stay pending above.
 
+**Recorded in Git at the time** (details taken from the commit messages of `7c526dc` and `d2b645c`; the messages were written with Claude Code's assistance). They state that: the colon was removed at
+**line 19**; the parser fails at **line 20**; locally, PyYAML and actionlint both rejected the file with *"mapping values are not allowed here"* at line 20 (actionlint also reported *"could not parse as YAML"*);
+the missing colon turns line 19 into the start of a multi-line plain scalar; run 44884178546 failed immediately with 0 jobs and *"This run likely failed because of a workflow file issue."*; and after the fix PyYAML parses the file and
+actionlint reports no findings. These are the **local tools' messages** as recorded in the commit messages. They are **not** the text of GitHub's web page, which is still pending above.
+
 **Root cause.** `runs-on ubuntu-latest` has no `:`, so it is not a `key: value` pair inside the job's mapping. The YAML parser rejects the file, GitHub
 marks the workflow invalid, and no job starts. The mistake is in the file's syntax, not in the application or the runner.
 
@@ -51,7 +58,8 @@ marks the workflow invalid, and no job starts. The mistake is in the file's synt
 2. The only change in the commit is one line, so that line is the suspect.
 3. The line lacks the colon that every other key in the file has.
 
-**Troubleshooting steps actually taken, including any Copilot use.** **PENDING YOUR INPUT** (the project owner records them here).
+**Troubleshooting steps actually taken.** The only steps recorded in Git are those in the two commit messages above (local validation with PyYAML and actionlint, and reading the GitHub run result),
+made with Claude Code's assistance. Any other steps the owner took, and any Copilot use: **Not recalled / Evidence unavailable**.
 
 **Fix.** Commit [`d2b645c`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/d2b645c) ("demo: fix the YAML syntax error in pipeline-demo.yml"):
 ```diff
@@ -61,11 +69,9 @@ marks the workflow invalid, and no job starts. The mistake is in the file's synt
 
 **Recovered run.** [44884710861](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884710861), push, commit `d2b645c`, `success`.
 
-**Copilot troubleshooting.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified). Whether it was used for **this** failure, and the
-exact prompt, answer and changes, are **PENDING YOUR INPUT** and are not assumed to match any other failure. PLACEHOLDER:
-- Prompt (verbatim): ____
-- Copilot's answer (verbatim): ____
-- What I accepted or changed, and why: ____
+**Copilot troubleshooting.** **Not recalled / Evidence unavailable.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified), but could not
+recall which failure it covered, and no Copilot conversation is stored in this repository or in its GitHub commit, pull request or comment records. The prompt, the answer and the changes made are therefore
+not available and are **not reconstructed**. This is not assumed to match any other failure.
 
 ---
 
@@ -85,6 +91,15 @@ Health check request failed.
 ##[error]Process completed with exit code 1.
 ```
 
+**Verified from the GitHub API and the run logs (2026-11-21).**
+- The same commit `8feb5a0` had passed before: run [44881750147](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44881750147) (push to `demo/baseline`, 07:45:56 UTC, `success`).
+- The failed run 44884809417 (08:25:22 UTC) and the recovered run 44885032635 (08:28:16 UTC, 2 minutes 54 seconds later) are **two separate runs**, each with `run_attempt` 1. The recovery was therefore a **new
+  manual dispatch**, not a re-run of the failed run (a re-run would have kept the same run ID with attempt 2).
+- Both runs have event `workflow_dispatch` and actor and triggering actor `Bhabotos`.
+- The failed run's log shows `HEALTH_CHECK_URL: https://shopnest-demo-target.invalid/health`. The recovered run's log shows `HEALTH_CHECK_URL: https://api.github.com/zen`, and both of its jobs passed.
+- **Not confirmable from GitHub:** whether either run was started from the web UI or the command line (the API records only the event and the actor), and whether the recovery run's URL was typed or left at the
+  default (the workflow uses the default when the input is empty, so both give the same log). For the failed run, the UI method and the typed URL are the owner's statement above.
+
 **Root cause.** The `.invalid` top-level domain is reserved and can never resolve, so the HTTP request cannot connect. The step's script treats a failed request as a
 failed deployment check and exits 1, which is the intended behaviour. This is a configuration and connectivity failure, not a code defect.
 
@@ -93,16 +108,17 @@ failed deployment check and exits 1, which is the intended behaviour. This is a 
 2. The failing step's log names the value of `HEALTH_CHECK_URL` and the message "Health check request failed". The script prints a different message for a non-2xx status, so the request itself failed.
 3. The URL ends in `.invalid`, which cannot resolve.
 
-**Troubleshooting steps actually taken, including any Copilot use.** **PENDING YOUR INPUT** (the project owner records them here).
+**Troubleshooting steps actually taken, including any Copilot use.** **Not recalled / Evidence unavailable.** The owner could not recall them, and nothing is recorded for this failure: it has no commit,
+no pull request and no comment.
 
 **Fix.** The recovery was a **corrected workflow input on the same commit** (`8feb5a0`): the run was started again with a reachable endpoint, `HEALTH_CHECK_URL: https://api.github.com/zen`
 (the workflow's default), and no file in the repository changed. **There is no fix commit**, because the failure came from an input and not from the repository, and none has been created.
 See "Evidence gaps" below: the assignment asks for a link to the fix commit.
 
-**Recovered run.** [44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635), `workflow_dispatch`, same commit `8feb5a0`: `deploy-check` = success, `backend-tests` = success. The log shows the default URL. How this recovery run was started (UI or CLI) has not been recorded.
+**Recovered run.** [44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635), `workflow_dispatch`, same commit `8feb5a0`: `deploy-check` = success, `backend-tests` = success. The log shows the default URL. How this recovery run was started (UI or CLI) is **Not recalled / Evidence unavailable**; the GitHub API does not record it (see the verified facts above).
 
-**Copilot troubleshooting.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified). Whether it was used for **this** failure, and the
-exact prompt, answer and changes, are **PENDING YOUR INPUT** and are not assumed to match any other failure. PLACEHOLDER: prompt (verbatim) ____ / answer (verbatim) ____ / what I changed ____
+**Copilot troubleshooting.** **Not recalled / Evidence unavailable.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified), but could not
+recall whether it covered this failure. No conversation is stored in the repository or in GitHub's records, so the prompt, answer and changes are not available and are **not reconstructed**.
 
 ---
 
@@ -135,7 +151,7 @@ The code was right and the test was wrong.
 3. Read `backend/src/config.js`: the default port is 3000. So the application is correct and the assertion is wrong.
 4. Fix the assertion (not the code), and validate locally: `test/config.test.js` 5 of 5 passed; full backend suite 160 passed, 0 failed, 11 skipped (the PostgreSQL integration tests need a database
    and were skipped locally; CI ran them); lint clean.
-5. The project owner's own use of Copilot for this failure: **PENDING YOUR INPUT** (the owner states Copilot was used for troubleshooting; whether that covered this failure is not yet recorded).
+5. The project owner's own use of Copilot for this failure: **Not recalled / Evidence unavailable** (the owner states Copilot was used for troubleshooting but could not recall whether it covered this failure).
 
 **Fix.** Commit [`5472d40`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/5472d40c1ea4e9e54a453d3f8120a65ac3b71a46) ("fix(test): restore the expected default port to 3000 (recovery from failure 3)"). The owner approved the fix; the commit was created with Claude Code's assistance:
 ```diff
@@ -146,8 +162,9 @@ The code was right and the test was wrong.
 **Recovered run.** [44920708004](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920708004) (pull request, `5472d40`): all six checks passed (Backend 22 and 24, Backend Docker image,
 Deploy scripts and Compose, Frontend 22 and 24, including the PostgreSQL integration tests). The merge state became CLEAN. PR #28 stays open and is not merged; it exists only as evidence.
 
-**Copilot troubleshooting.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified). Whether it was used for **this** failure, and the
-exact prompt, answer and changes, are **PENDING YOUR INPUT** and are not assumed to match any other failure. PLACEHOLDER: prompt (verbatim) ____ / answer (verbatim) ____ / what I changed ____
+**Copilot troubleshooting.** **Not recalled / Evidence unavailable.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified), but could not
+recall whether it covered this failure. The troubleshooting recorded above was done with Claude Code. No Copilot conversation is stored in the repository or in GitHub's records, so a Copilot prompt, answer and
+changes are not available and are **not reconstructed**.
 
 ---
 
@@ -164,8 +181,14 @@ After the fix commit, all required checks passed and the state became **CLEAN**.
 ## Existing Copilot evidence (not troubleshooting)
 
 `docs/copilot/` records how `pipeline-demo.yml` was **generated** with Copilot: the prompts (labelled EXACT or PARTIAL), the responses, the edits, and an assistant-written SHA comparison
-that is explicitly not Copilot output. **No Copilot troubleshooting conversation** is in the repository yet. The project owner states that GitHub Copilot was used for troubleshooting; this is the
-owner's statement and is not independently verified. Which failure(s) it covered, and the exact prompts and answers, are pending and are not assumed to be the same for each failure. Part H asks for the evidence for each failure.
+that is explicitly not Copilot output. **No Copilot troubleshooting conversation** is in the repository, in any commit message, or in any pull request, issue or review comment (0 comments exist in the
+repository). The project owner states that GitHub Copilot was used for troubleshooting; this is the owner's statement and is not independently verified. The owner could not recall which failure(s) it covered or the
+prompts and answers, which are therefore marked **Not recalled / Evidence unavailable** and are not assumed to be the same for each failure. Part H asks for this evidence for each failure, so this remains an open gap in the evidence.
+
+**Local check on the owner's machine (cannot be verified from the repository).** VS Code's chat index for this repository's workspace lists three chat sessions on 2026-11-21, all before the first failure commit
+(`7c526dc`, 13:48:27 +06:00): two empty sessions titled "New Chat" (created 12:38 and 13:03, UTC+06:00) and one titled "GitHub Actions workflow for pipeline-demo.yml" (created 13:03, last request 13:21, UTC+06:00).
+No session dated after the first failure commit is listed. Only titles and times were read; no session content was opened. This does not rule out Copilot use elsewhere (for example on github.com or in another
+VS Code window), which is why the owner's statement is kept and labelled as unverified.
 
 ---
 
@@ -176,8 +199,8 @@ owner's statement and is not independently verified. Which failure(s) it covered
 | G1 | Screenshots: failed run 44884178546 with the workflow-file error and its line number | project owner | failure 1 |
 | G2 | Screenshots: failed run 44884809417 (the failed step and `HEALTH_CHECK_URL` line) and recovered run 44885032635 | project owner | failure 2 |
 | G3 | Screenshots: failed run 44920064307, the expanded Test step, PR #28 blocked, then green; recovered run 44920708004 | project owner | failure 3 |
-| G4 | The project owner's real Copilot troubleshooting conversation(s): which failure(s) each covered, and the exact prompt, answer and changes for each (not assumed to be the same across failures). The owner states Copilot was used | project owner | all three |
-| G5 | The project owner's own troubleshooting steps for failures 1 and 2 | project owner | failures 1, 2 |
+| G4 | **Not recalled / Evidence unavailable:** the Copilot troubleshooting conversation(s): which failure(s) each covered, and the exact prompt, answer and changes (not assumed to be the same across failures). The owner states Copilot was used | none can be recovered | all three |
+| G5 | **Partly recovered:** failure 1's steps are recorded in its commit messages. Failure 2's steps are **Not recalled / Evidence unavailable** | none can be recovered | failures 1, 2 |
 | G6 | Failure 2 has **no fix commit** to link (the fix was a corrected input). Decide how to document it; do not invent a commit | project owner | failure 2 |
 | G7 | **Resolved (owner's statement):** the owner started the failure 2 run from the GitHub Actions UI and entered the `.invalid` URL; the run log shows the same value | none | failure 2 |
 | G8 | **Resolved:** Git commit times are UTC+06:00 and run times are UTC (see "Timestamps" above) | none | all |
