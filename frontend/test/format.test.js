@@ -15,4 +15,16 @@ describe('formatMoney', () => {
   it('uses lakh grouping for large amounts', () => {
     expect(formatMoney(123456789, 'BDT')).toBe('BDT 12,34,567.89');
   });
+
+  // F10: another currency is formatted with its own symbol. USD has a symbol ("$"), so there is no
+  // code and no non-breaking space here, unlike "BDT" above where Intl falls back to the code.
+  it('formats another currency with its own symbol', () => {
+    expect(formatMoney(123456, 'USD')).toBe('$1,234.56');
+  });
+
+  // F11: the currency always comes from the API, so a missing one is a bug and must fail loudly
+  // instead of silently rendering a made-up currency. This pins what Intl does today.
+  it('requires a currency', () => {
+    expect(() => formatMoney(100)).toThrow(TypeError);
+  });
 });
