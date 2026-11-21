@@ -41,9 +41,22 @@ trap 'bg_unlock; sleep 1' EXIT   # from here on this run owns the lock and must 
 
 bg_log "manual rollback of $BG_ENV to $SHA"
 
+bg_host_guard   # AWS mode: the metadata-service guard, before any container is touched
+
 bg_history_has_deployed "$SHA" || bg_die "$SHA is not in the release history as deployed; see $BG_STATE_DIR/history.log"
-[ "$(bg_image_revision "$SHA" || true)" = "$SHA" ] || bg_die "image shopnest-backend:$SHA is not on this server any more"
-[ -d "$BG_FRONTEND_DIR/releases/$SHA" ] || bg_die "frontend files for $SHA are not on this server any more"
+if [ "$(bg_image_revision "$SHA" || true)" != "$SHA" ]; then
+  # On AWS the image may have been cleaned up on the host. The digest of every release is recorded at deploy time,
+  # so it is pulled again from ECR; if ECR no longer has it (lifecycle) the rollback is refused before anything changes.
+  [ -f "$BG_STATE_DIR/image-ref-$SHA" ] || bg_die "image shopnest-backend:$SHA is not on this server any more and no ECR digest was recorded for it"
+  bg_log "image shopnest-backend:$SHA is not on this server; pulling the digest recorded for that release"
+  bg_pull_image "$(cat "$BG_STATE_DIR/image-ref-$SHA")" "$SHA"
+fi
+if [ ! -d "$BG_FRONTEND_DIR/releases/$SHA" ]; then
+  # The artifact reference of every release is recorded at deploy time. If the host lost the files, fetch the same bundle
+  # again and verify its SHA-256 before extracting; if that is impossible the rollback is refused before anything changes.
+  bg_log "frontend files for $SHA are not on this server; fetching the recorded artifact"
+  bg_refetch_frontend "$SHA" || bg_die "frontend files for $SHA are not on this server any more and could not be restored from the recorded artifact"
+fi
 bg_frontend_ok "$BG_FRONTEND_DIR/releases/$SHA" || bg_die "frontend files for $SHA have no non-empty index.html; refusing before anything is changed"
 
 live="$(bg_active)"
@@ -52,8 +65,13 @@ if [ -n "$live" ] && [ "$(cat "$BG_STATE_DIR/tag-$live")" = "$SHA" ]; then
   exit 0
 fi
 
-bg_log "ensuring the database is up (it is never recreated or restarted by a rollback)"
+if [ "$BG_DB_MODE" = rds ]; then
+  bg_log "checking that the RDS endpoint is reachable (there is no database container to start)"
+else
+  bg_log "ensuring the database is up (it is never recreated or restarted by a rollback)"
+fi
 bg_db_up || bg_die "the database did not become ready"
+bg_host_guard_verify "$SHA"   # FAIL CLOSED, as for a deploy
 
 if bg_release "$SHA" "manual rollback"; then
   bg_log "ROLLBACK SUCCEEDED: $SHA is live on $BG_ENV"

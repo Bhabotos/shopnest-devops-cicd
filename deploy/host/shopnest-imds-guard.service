@@ -1,0 +1,17 @@
+# Installed by install-host-guards.sh. Re-installs the metadata-service rules whenever Docker (re)starts and at boot.
+# UNPROVEN until the instance-level tests (G7, G8, G12 in docs/AWS_STAGING_INTEGRATION.md) pass: in particular, containers
+# with a restart policy can start in the seconds before these rules are applied.
+[Unit]
+Description=ShopNest: only the backend containers may reach the EC2 metadata service
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/shopnest-imds-guard ensure-network /etc/shopnest/edge.env
+ExecStart=/usr/local/sbin/shopnest-imds-guard apply /etc/shopnest/edge.env
+
+[Install]
+WantedBy=multi-user.target
