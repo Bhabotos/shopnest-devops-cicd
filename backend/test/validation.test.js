@@ -41,6 +41,21 @@ describe('orderSchema', () => {
     delete order.customer.address;
     expect(orderSchema.safeParse(order).success).toBe(false);
   });
+
+  // 2147483647 is the largest PostgreSQL integer. One more would fail inside the database
+  // as a server error, so the schema has to stop it first.
+  it('bounds productId at the PostgreSQL integer maximum', () => {
+    const tooBig = validOrder();
+    tooBig.items[0].productId = 2147483648;
+    const rejected = orderSchema.safeParse(tooBig);
+    expect(rejected.success).toBe(false);
+    // Make sure it was productId that failed, not some other field.
+    expect(rejected.error.issues[0].path).toEqual(['items', 0, 'productId']);
+
+    const atLimit = validOrder();
+    atLimit.items[0].productId = 2147483647;
+    expect(orderSchema.safeParse(atLimit).success).toBe(true);
+  });
 });
 
 describe('id schemas', () => {
@@ -48,6 +63,20 @@ describe('id schemas', () => {
     expect(idSchema.parse('7')).toBe(7);
     expect(idSchema.safeParse('abc').success).toBe(false);
     expect(idSchema.safeParse('0').success).toBe(false);
+  });
+
+  // idSchema reads the id from the URL, so it receives text. It must accept plain decimal digits
+  // within the PostgreSQL integer range and nothing else.
+  it.each(['99999999999', '2147483648', '1e2', '0x10', ' 1', '0', '-1', 'abc'])(
+    'rejects the path id %j',
+    (value) => {
+      expect(idSchema.safeParse(value).success).toBe(false);
+    },
+  );
+
+  it('accepts the smallest and largest valid ids', () => {
+    expect(idSchema.parse('1')).toBe(1);
+    expect(idSchema.parse('2147483647')).toBe(2147483647);
   });
 
   it('accepts only UUIDs for order ids', () => {
