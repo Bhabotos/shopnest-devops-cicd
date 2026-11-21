@@ -1,0 +1,8 @@
+# Installed by install-host-guards.sh. Repairs the rules if anything removed or changed them.
+[Unit]
+Description=ShopNest: verify the metadata-service rules, and re-apply them if they drifted
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '/usr/local/sbin/shopnest-imds-guard check /etc/shopnest/edge.env || /usr/local/sbin/shopnest-imds-guard apply /etc/shopnest/edge.env'

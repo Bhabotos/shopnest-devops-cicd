@@ -3,7 +3,11 @@
 # Design: docs/ARCHITECTURE.md, "Deployment & rollback".
 #
 # Layout on the server (per environment, under $SHOPNEST_HOME, default ~/shopnest):
-#   <env>/secrets.env           database passwords, created by the operator, mode 600, never in git
+#   <env>/runtime.env           NON-secret settings (database host, name, region, the db-app secret id, the ECR repository
+#                               and the artifact bucket), written by the operator, never in git. The backend reads its
+#                               user and password (db-app ONLY) from AWS Secrets Manager; no password exists on the
+#                               server, and the owner and master secret ids are deliberately not accepted here.
+#   <env>/secrets.env           LOCAL REHEARSAL ONLY (BG_LOCAL_DB=1): passwords of the throwaway database container
 #   <env>/state/active          blue or green: the colour that receives traffic
 #   <env>/state/tag-blue|green  release SHA running (or last run) on that colour
 #   <env>/state/last_good       SHA of the last release that passed live verification
@@ -18,6 +22,11 @@ bg_die() { bg_log "ERROR: $*" >&2; exit 1; }
 bg_require_sha() { [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]] || bg_die "release must be a full 40-character commit SHA"; }
 
 # bg_init <staging|production> <bundle dir that contains deploy/>
+# Two database modes:
+#   rds   (default, the only one allowed for staging and production): the database is the private RDS
+#         instance. Needs <env>/runtime.env. No password is read, stored or checked here.
+#   local (BG_LOCAL_DB=1): a PostgreSQL CONTAINER, for rehearsing the blue/green logic on a laptop. Needs
+#         <env>/secrets.env. Refused unless the stack is plainly not a real environment (see below).
 bg_init() {
   BG_ENV="${1:-}"
   BG_RELEASE_DIR="${2:-}"
@@ -33,36 +42,131 @@ bg_init() {
   # The prefix and the port can be overridden so a local rehearsal never touches a real environment.
   BG_PROJECT="${SHOPNEST_PROJECT_PREFIX:-shopnest}-$BG_ENV"
   BG_COMPOSE_FILE="$BG_RELEASE_DIR/deploy/docker-compose.prod.yml"
+  BG_COMPOSE_FILES=(-f "$BG_COMPOSE_FILE")
   mkdir -p "$BG_STATE_DIR" "$BG_UPSTREAM_DIR" "$BG_FRONTEND_DIR/releases" "$BG_LOG_DIR"
 
-  local secrets="$BG_ENV_DIR/secrets.env" key value
-  [ -f "$secrets" ] || bg_die "missing $secrets (create it on the server; see docs/ARCHITECTURE.md)"
-  if [ "${BG_ALLOW_LOOSE_SECRETS:-}" = "1" ]; then
-    # Only for a local rehearsal on a filesystem that cannot hold mode 600 (Windows). Refused unless the
-    # stack is plainly not a real environment: a project prefix other than "shopnest" (so it can never be
-    # shopnest-staging or shopnest-production) and a loopback-only bind.
-    if [ -z "${SHOPNEST_PROJECT_PREFIX:-}" ] || [ "$SHOPNEST_PROJECT_PREFIX" = "shopnest" ] || [ "${HTTP_BIND:-}" != "127.0.0.1" ]; then
-      bg_die "BG_ALLOW_LOOSE_SECRETS=1 is for local rehearsals only: it needs SHOPNEST_PROJECT_PREFIX set to something other than 'shopnest' and HTTP_BIND=127.0.0.1; it is never allowed for $BG_PROJECT"
-    fi
-    bg_log "WARNING: BG_ALLOW_LOOSE_SECRETS=1, the secrets file mode is not checked (local rehearsal $BG_PROJECT)"
-  elif [ "$(stat -c '%a' "$secrets")" != "600" ]; then
-    bg_die "$secrets must have mode 600"
+  if [ "${BG_LOCAL_DB:-}" = "1" ]; then
+    BG_DB_MODE=local
+    bg_require_rehearsal_stack "BG_LOCAL_DB=1"
+    [ -f "$BG_RELEASE_DIR/deploy/docker-compose.local-db.yml" ] || bg_die "no deploy/docker-compose.local-db.yml in $BG_RELEASE_DIR"
+    BG_COMPOSE_FILES+=(-f "$BG_RELEASE_DIR/deploy/docker-compose.local-db.yml")
+  else
+    BG_DB_MODE=rds
   fi
+
   [ -f "$BG_RELEASE_DIR/deploy/env/$BG_ENV.env" ] || bg_die "missing deploy/env/$BG_ENV.env in the bundle"
   set -a
   # shellcheck disable=SC1090
   . "$BG_RELEASE_DIR/deploy/env/$BG_ENV.env"
+  set +a
+  if [ "$BG_DB_MODE" = local ]; then
+    bg_load_local_secrets
+  else
+    bg_load_runtime
+    # The container network and the metadata-service rules come from one set of EDGE_* settings: refuse inconsistent ones
+    # before anything is started (the real checks are in deploy/host/imds-guard.sh and its own tests).
+    bash "$BG_RELEASE_DIR/deploy/host/imds-guard.sh" validate "$BG_RELEASE_DIR/deploy/env/$BG_ENV.env" > /dev/null \
+      || bg_die "the EDGE_* settings in deploy/env/$BG_ENV.env are not consistent (run: bash deploy/host/imds-guard.sh validate deploy/env/$BG_ENV.env)"
+  fi
+  if [ -n "${SHOPNEST_HTTP_PORT:-}" ]; then HTTP_PORT="$SHOPNEST_HTTP_PORT"; export HTTP_PORT; fi
+  export ENV_DIR="$BG_ENV_DIR"
+  bg_stage_config
+  bg_export_tags
+}
+
+# A local rehearsal (loose secrets file, throwaway database container) is accepted only when the stack is plainly
+# not a real environment: a project prefix other than "shopnest" (so it can never be shopnest-staging or
+# shopnest-production) and a loopback-only bind. $1 names the setting being refused, for the message.
+bg_require_rehearsal_stack() {
+  if [ -z "${SHOPNEST_PROJECT_PREFIX:-}" ] || [ "$SHOPNEST_PROJECT_PREFIX" = "shopnest" ] || [ "${HTTP_BIND:-}" != "127.0.0.1" ]; then
+    bg_die "$1 is for local rehearsals only: it needs SHOPNEST_PROJECT_PREFIX set to something other than 'shopnest' and HTTP_BIND=127.0.0.1; it is never allowed for $BG_PROJECT"
+  fi
+}
+
+# ---- the host guard for the EC2 metadata service (AWS mode only) ------------------------------------------------
+# Installed and applied BEFORE any container starts, and PROVEN before a release starts: a probe container and nginx must
+# fail to reach the metadata service. If that cannot be shown the deploy stops (fail closed). GUARD_ROOT is empty on a real
+# host; the offline tests set it. The rules themselves and their tests live in deploy/host/ and deploy/tests/imds-guard.test.sh.
+bg_guard_bin() { echo "${GUARD_ROOT:-}/usr/local/sbin/shopnest-imds-guard"; }
+bg_guard_env() { echo "${GUARD_ROOT:-}/etc/shopnest/edge.env"; }
+
+bg_host_guard() {
+  [ "$BG_DB_MODE" = rds ] || return 0
+  bash "$BG_RELEASE_DIR/deploy/host/install-host-guards.sh" "$BG_RELEASE_DIR/deploy/env/$BG_ENV.env" || bg_die "could not install the metadata-service guard"
+  "$(bg_guard_bin)" ensure-network "$(bg_guard_env)" || bg_die "could not create the container network"
+  "$(bg_guard_bin)" apply "$(bg_guard_env)" || bg_die "could not apply the metadata-service rules; nothing was started"
+}
+
+# bg_host_guard_verify <release sha>: the image of that release runs the probe. nginx is checked too when it is running.
+bg_host_guard_verify() {
+  [ "$BG_DB_MODE" = rds ] || return 0
+  local nginx_container
+  nginx_container="$(bg_compose ps -q nginx 2> /dev/null | head -n 1 || true)"
+  "$(bg_guard_bin)" verify "$(bg_guard_env)" "shopnest-backend:$1" "$nginx_container" \
+    || bg_die "FAIL CLOSED: the metadata-service isolation could not be confirmed; no release was started"
+}
+
+# bg_read_env_file <file> <allowed key>...: read KEY=VALUE lines and export them. The file is PARSED, never sourced, so
+# nothing in it can run as a command: only the listed keys are accepted, and a value may contain only letters, digits and
+# . _ / @ + = : - (no quotes, spaces, $ or ;). Blank lines and lines starting with # are ignored.
+bg_read_env_file() {
+  local file="$1" line key value allowed n=0
+  shift
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]] || bg_die "$file line $n is not KEY=VALUE"
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    allowed=0
+    for a in "$@"; do [ "$a" = "$key" ] && allowed=1; done
+    [ "$allowed" = 1 ] || bg_die "$file line $n: $key is not an allowed setting"
+    [[ "$value" =~ ^[A-Za-z0-9._/@+=:-]*$ ]] || bg_die "$file line $n: the value of $key is not a plain value (letters, digits and . _ / @ + = : - only)"
+    export "$key=$value"
+  done < "$file"
+}
+
+# RDS mode: <env>/runtime.env holds the non-secret settings. Nothing here is a credential.
+bg_load_runtime() {
+  local runtime="$BG_ENV_DIR/runtime.env" key
+  [ -f "$runtime" ] || bg_die "missing $runtime (create it on the server; see docs/AWS_STAGING_INTEGRATION.md)"
+  # DB_OWNER_SECRET_ID and any master-secret setting are NOT allowed keys: this host must never learn where the owner or
+  # master credentials are, because migrations and the role bootstrap run in CodeBuild, not here.
+  bg_read_env_file "$runtime" DB_HOST DB_PORT DB_NAME AWS_REGION DB_APP_SECRET_ID ECR_REPOSITORY ARTIFACT_BUCKET
+  for key in DB_HOST DB_NAME AWS_REGION DB_APP_SECRET_ID ECR_REPOSITORY ARTIFACT_BUCKET; do
+    [ -n "${!key:-}" ] || bg_die "$key is not set in $runtime"
+  done
+  DB_PORT="${DB_PORT:-5432}"
+  { [[ "$DB_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$DB_PORT" -ge 1 ] && [ "$DB_PORT" -le 65535 ]; } || bg_die "DB_PORT in $runtime must be a port number"
+  [[ "$DB_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || bg_die "DB_HOST in $runtime is not a host name"
+  [[ "$DB_NAME" =~ ^[a-z_][a-z0-9_]*$ ]] || bg_die "DB_NAME in $runtime is not a plain database name"
+  [[ "$AWS_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]$ ]] || bg_die "AWS_REGION in $runtime is not a region"
+  [[ "$DB_APP_SECRET_ID" =~ ^[A-Za-z0-9/_+=.@-]+$ ]] || bg_die "DB_APP_SECRET_ID in $runtime is not a plain secret name"
+  [[ "$ARTIFACT_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || bg_die "ARTIFACT_BUCKET in $runtime is not a bucket name"
+  [[ "$ECR_REPOSITORY" =~ ^[a-z0-9][a-z0-9._/-]*$ ]] || bg_die "ECR_REPOSITORY in $runtime is not a plain repository name"
+  export DB_HOST DB_PORT DB_NAME AWS_REGION DB_APP_SECRET_ID ECR_REPOSITORY ARTIFACT_BUCKET
+}
+
+# Local mode: the passwords of the throwaway database container.
+bg_load_local_secrets() {
+  local secrets="$BG_ENV_DIR/secrets.env" key value
+  [ -f "$secrets" ] || bg_die "missing $secrets (create it on the server; see docs/ARCHITECTURE.md)"
+  if [ "${BG_ALLOW_LOOSE_SECRETS:-}" = "1" ]; then
+    # Only for a local rehearsal on a filesystem that cannot hold mode 600 (Windows).
+    bg_require_rehearsal_stack "BG_ALLOW_LOOSE_SECRETS=1"
+    bg_log "WARNING: BG_ALLOW_LOOSE_SECRETS=1, the secrets file mode is not checked (local rehearsal $BG_PROJECT)"
+  elif [ "$(stat -c '%a' "$secrets")" != "600" ]; then
+    bg_die "$secrets must have mode 600"
+  fi
+  set -a
   # shellcheck disable=SC1090
   . "$secrets"
   set +a
-  if [ -n "${SHOPNEST_HTTP_PORT:-}" ]; then HTTP_PORT="$SHOPNEST_HTTP_PORT"; export HTTP_PORT; fi
   for key in POSTGRES_PASSWORD DB_OWNER_PASSWORD DB_APP_PASSWORD; do
     value="${!key:-}"
     [[ "$value" =~ ^[A-Za-z0-9]{16,}$ ]] || bg_die "$key in secrets.env must be 16 or more letters and digits"
   done
-  export ENV_DIR="$BG_ENV_DIR"
-  bg_stage_config
-  bg_export_tags
 }
 
 # Everything a container mounts from the host lives at a STABLE path under the environment directory.
@@ -70,20 +174,32 @@ bg_init() {
 # release and Compose would recreate it; for the database that is a restart in the middle of a live
 # deploy (found by the first real-Docker rehearsal: one failed request and a 2.5 s stall).
 bg_stage_config() {
-  [ -d "$BG_RELEASE_DIR/deploy/db/init" ] || bg_die "missing deploy/db/init in the bundle"
   [ -f "$BG_RELEASE_DIR/deploy/nginx/nginx.conf" ] || bg_die "missing deploy/nginx/nginx.conf in the bundle"
-  mkdir -p "$BG_ENV_DIR/db-init" "$BG_ENV_DIR/nginx/conf" || bg_die "could not create the config directories"
-  cp -a "$BG_RELEASE_DIR/deploy/db/init/." "$BG_ENV_DIR/db-init/" || bg_die "could not stage the database init scripts"
+  mkdir -p "$BG_ENV_DIR/nginx/conf" || bg_die "could not create the config directories"
+  if [ "$BG_DB_MODE" = local ]; then
+    [ -d "$BG_RELEASE_DIR/deploy/db/init" ] || bg_die "missing deploy/db/init in the bundle"
+    mkdir -p "$BG_ENV_DIR/db-init" || bg_die "could not create the config directories"
+    cp -a "$BG_RELEASE_DIR/deploy/db/init/." "$BG_ENV_DIR/db-init/" || bg_die "could not stage the database init scripts"
+  fi
   # Copied over the existing file (same inode); a running nginx picks it up at the next reload.
   cp "$BG_RELEASE_DIR/deploy/nginx/nginx.conf" "$BG_ENV_DIR/nginx/conf/default.conf" || bg_die "could not stage the nginx config"
 }
 
-# Start the database if it is not running, and NEVER recreate or restart it: --no-recreate leaves a
-# running container alone even if Compose thinks its definition changed.
+# The database must be reachable before a release is started.
+#   rds:   the RDS endpoint accepts a TCP connection from this host. This proves the network path only; the
+#          credentials, TLS and the roles are proven by the migration step that follows, and by the backend's own
+#          /health (which runs SELECT 1). There is no database container to start, restart or recreate.
+#   local: start the database container if it is not running, and NEVER recreate or restart it:
+#          --no-recreate leaves a running container alone even if Compose thinks its definition changed.
 bg_db_up() {
-  bg_compose up -d --no-recreate db || return 1
-  bg_retry 60 2 bg_compose exec -T db pg_isready -h 127.0.0.1 -U shopnest_admin -d shopnest
+  if [ "$BG_DB_MODE" = local ]; then
+    bg_compose up -d --no-recreate db || return 1
+    bg_retry 60 2 bg_compose exec -T db pg_isready -h 127.0.0.1 -U shopnest_admin -d shopnest
+  else
+    bg_retry "${DB_WAIT_ATTEMPTS:-30}" "${DB_WAIT_INTERVAL:-2}" bg_db_tcp_open
+  fi
 }
+bg_db_tcp_open() { timeout 3 bash -c 'exec 3<> "/dev/tcp/$1/$2"' _ "$DB_HOST" "$DB_PORT"; }
 
 bg_export_tags() {
   BLUE_TAG="$(cat "$BG_STATE_DIR/tag-blue" 2>/dev/null || echo none)"
@@ -91,7 +207,7 @@ bg_export_tags() {
   export BLUE_TAG GREEN_TAG
 }
 
-bg_compose() { docker compose -p "$BG_PROJECT" -f "$BG_COMPOSE_FILE" "$@"; }
+bg_compose() { docker compose -p "$BG_PROJECT" "${BG_COMPOSE_FILES[@]}" "$@"; }
 
 bg_active() { cat "$BG_STATE_DIR/active" 2>/dev/null || true; }
 bg_other() { if [ "$1" = blue ]; then echo green; else echo blue; fi; }
@@ -298,3 +414,82 @@ bg_lock() {
   mkdir "$BG_LOCK_DIR" 2> /dev/null || bg_die "another deploy or rollback is running for $BG_ENV (remove $BG_LOCK_DIR only if you are sure none is)"
 }
 bg_unlock() { rmdir "$BG_LOCK_DIR" 2> /dev/null || true; }
+
+# ---- release image from ECR (the delivery path on AWS) --------------------------------------------
+# The image is identified by its DIGEST, never by a tag, so what runs is exactly what CI pushed and the SSM caller
+# cannot swap it by moving a tag. The registry login uses the instance role (no stored credentials: a throwaway
+# Docker config directory is used and removed again).
+bg_image_ref_ok() { [[ "$1" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$ ]]; }
+
+# bg_validate_bundle_ref <s3 key> <sha-256>: PURE (it changes nothing), so the deploy can refuse a bad reference before it
+# installs a guard, creates a network, pulls an image or starts anything.
+bg_validate_bundle_ref() {
+  [[ "$1" =~ ^deploy/(staging|production)/[0-9a-f]{40}/bundle\.tar\.gz$ ]] || bg_die "the bundle key must be deploy/<environment>/<40-hex sha>/bundle.tar.gz"
+  [[ "$2" =~ ^[0-9a-f]{64}$ ]] || bg_die "the bundle SHA-256 must be 64 hex digits"
+}
+
+# bg_record_bundle <sha> <s3 key> <sha-256>: remember WHICH artifact this release came from, so a later rollback can
+# fetch the same frontend files again (and verify them) if the host no longer has them.
+bg_record_bundle() {
+  bg_validate_bundle_ref "$2" "$3"
+  printf '%s %s\n' "$2" "$3" > "$BG_STATE_DIR/bundle-$1"
+}
+
+# bg_refetch_frontend <sha>: download the recorded bundle from S3, verify its SHA-256 BEFORE extracting anything, and
+# install only its frontend files. Returns 1 (changing nothing) if there is no record, no bucket, or any check fails.
+bg_refetch_frontend() {
+  local sha="$1" key hash tmp
+  [ -f "$BG_STATE_DIR/bundle-$sha" ] || return 1
+  [ -n "${ARTIFACT_BUCKET:-}" ] || return 1
+  read -r key hash < "$BG_STATE_DIR/bundle-$sha"
+  tmp="$(mktemp -d)"
+  if ! aws s3 cp "s3://$ARTIFACT_BUCKET/$key" "$tmp/bundle.tar.gz" --region "$AWS_REGION" --only-show-errors; then
+    rm -rf "$tmp"; bg_log "could not download the recorded bundle for $sha"; return 1
+  fi
+  if ! printf '%s  %s\n' "$hash" "$tmp/bundle.tar.gz" | sha256sum --check --strict > /dev/null 2>&1; then
+    rm -rf "$tmp"; bg_log "the recorded bundle for $sha does not match its recorded SHA-256; refusing it"; return 1
+  fi
+  mkdir "$tmp/x"
+  if ! tar -xzf "$tmp/bundle.tar.gz" -C "$tmp/x" frontend-dist 2> /dev/null || ! bg_frontend_ok "$tmp/x/frontend-dist"; then
+    rm -rf "$tmp"; bg_log "the recorded bundle for $sha has no usable frontend files"; return 1
+  fi
+  bg_frontend_install "$sha" "$tmp/x/frontend-dist" || { rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+
+# bg_validate_image_ref <image ref>: PURE. A digest (never a tag), from THIS environment's region and repository.
+bg_validate_image_ref() {
+  local ref="$1" registry region repository
+  bg_image_ref_ok "$ref" || bg_die "the image reference must be <registry>/<repository>@sha256:<64 hex digits> (a digest, never a tag)"
+  registry="${ref%%/*}"
+  region="${registry#*.dkr.ecr.}"
+  region="${region%.amazonaws.com}"
+  [ "$region" = "${AWS_REGION:-}" ] || bg_die "the image registry region ($region) is not this environment's region"
+  repository="${ref#*/}"
+  repository="${repository%@*}"
+  [ "$repository" = "${ECR_REPOSITORY:-}" ] || bg_die "the image repository ($repository) is not this environment's repository (${ECR_REPOSITORY:-unset})"
+}
+
+# bg_pull_image <image ref> <release sha>: pull by digest, tag it as shopnest-backend:<sha> for Compose, and require its
+# revision label to be <sha>. The reference is remembered per release so a later rollback can pull it again.
+bg_pull_image() {
+  local ref="$1" sha="$2" registry region cfg revision
+  bg_validate_image_ref "$ref"
+  registry="${ref%%/*}"
+  region="${registry#*.dkr.ecr.}"
+  region="${region%.amazonaws.com}"
+  cfg="$(mktemp -d)"
+  if ! { aws ecr get-login-password --region "$region" | DOCKER_CONFIG="$cfg" docker login --username AWS --password-stdin "$registry" > /dev/null; }; then
+    rm -rf "$cfg"
+    bg_die "could not log in to ECR with the instance role"
+  fi
+  if ! DOCKER_CONFIG="$cfg" docker pull "$ref" > /dev/null; then
+    rm -rf "$cfg"
+    bg_die "could not pull $ref"
+  fi
+  rm -rf "$cfg"
+  docker tag "$ref" "shopnest-backend:$sha" || bg_die "could not tag the pulled image"
+  revision="$(bg_image_revision "$sha" || true)"
+  [ "$revision" = "$sha" ] || bg_die "image revision label '$revision' does not match $sha"
+  printf '%s\n' "$ref" > "$BG_STATE_DIR/image-ref-$sha"
+}

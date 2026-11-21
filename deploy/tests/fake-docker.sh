@@ -7,6 +7,8 @@
 #   $FAKE/start_fail/<sha>      the container for this SHA cannot start
 #   $FAKE/migrate_fail          the migrate job exits non-zero
 #   $FAKE/nginx_t_fail          `nginx -t` fails
+#   $FAKE/pull_fail             `docker pull` fails (the image is not in the registry any more)
+#   $FAKE/pull_wrong_revision   the pulled image carries a different revision label than the release SHA
 set -u
 : "${FAKE:?FAKE must point at the fake engine state directory}"
 mkdir -p "$FAKE/running" "$FAKE/images"
@@ -32,11 +34,29 @@ case "${1:-}" in
     [ -f "$FAKE/images/$tag" ] || exit 1
     cat "$FAKE/images/$tag"
     exit 0 ;;
+  pull) # docker pull <ref>: remember which revision the pulled image carries
+    log "pull $2"
+    [ -f "$FAKE/pull_fail" ] && exit 1
+    if [ -f "$FAKE/pull_wrong_revision" ]; then echo wrong > "$FAKE/last_pull_revision"; else cp "$FAKE/load-tag" "$FAKE/last_pull_revision"; fi
+    exit 0 ;;
+  tag) # docker tag <ref> shopnest-backend:<tag>
+    log "tag $2 $3"
+    cp "$FAKE/last_pull_revision" "$FAKE/images/${3#shopnest-backend:}"
+    exit 0 ;;
+  login)
+    cat > /dev/null
+    log "login"
+    exit 0 ;;
   compose) shift ;;
   *) exit 0 ;;
 esac
 
-while [ "${1:-}" = "-p" ] || [ "${1:-}" = "-f" ]; do shift 2; done
+compose_files=""
+while [ "${1:-}" = "-p" ] || [ "${1:-}" = "-f" ]; do
+  if [ "$1" = "-f" ]; then compose_files="$compose_files $(basename "$2")"; fi
+  shift 2
+done
+log "composefiles$compose_files"
 sub="${1:-}"
 shift || true
 

@@ -59,6 +59,9 @@ case "$endpoint" in unix://* | npipe:////./pipe/*) ;; *) fail "refusing: the Doc
 WORK="$(mktemp -d)"
 WORK_NATIVE="$(cygpath -m "$WORK" 2> /dev/null || echo "$WORK")"   # a path Docker Compose understands on Windows too
 export SHOPNEST_HOME="$WORK_NATIVE/home" SHOPNEST_PROJECT_PREFIX="$PREFIX" SHOPNEST_HTTP_PORT="$PORT" HTTP_BIND=127.0.0.1
+# This rehearsal has no RDS: it uses the throwaway database container (docker-compose.local-db.yml). The scripts accept
+# this only for a project prefix other than "shopnest" and a loopback bind, both set above.
+export BG_LOCAL_DB=1
 mkdir -p "$OUT" "$SHOPNEST_HOME/staging"
 OUT="$(cd "$OUT" && pwd)"
 
@@ -66,7 +69,7 @@ cleanup() {
   step "cleanup (throwaway project $PREFIX-staging only)"
   # Dummy values only so Compose can parse the file's required variables; nothing is started.
   POSTGRES_PASSWORD=x DB_OWNER_PASSWORD=x DB_APP_PASSWORD=x ENV_DIR="$WORK_NATIVE" HTTP_PORT=1 \
-    docker compose -p "$PREFIX-staging" -f "$WORK/bundles/$A/deploy/docker-compose.prod.yml" down -v --remove-orphans > /dev/null 2>&1 || true
+    docker compose -p "$PREFIX-staging" -f "$WORK/bundles/$A/deploy/docker-compose.prod.yml" -f "$WORK/bundles/$A/deploy/docker-compose.local-db.yml" down -v --remove-orphans > /dev/null 2>&1 || true
   for s in "$A" "$B" "$C" "$D" "$E"; do docker rmi -f "shopnest-backend:$s" > /dev/null 2>&1 || true; done
   [ "$KEEP" = 1 ] || rm -rf "$WORK"
 }
