@@ -39,6 +39,19 @@ Not re-verified in this review: `terraform validate` results (taken from CI runs
 | D7 | Where the graded zero-downtime proof runs (staging vs production) | T8.* | staging first |
 | D8 | Whether "Deploy scripts and Compose" and the Terraform jobs become required checks | T2.3 | add "Deploy scripts and Compose"; Terraform only after a pass-through job exists |
 
+### Decision status (updated 2026-11-21; recorded in `PROJECT_STATUS.md` decisions log)
+
+| ID | Status | Answer |
+|---|---|---|
+| D1 | WAITING FOR INSTRUCTOR CONFIRMATION | no instructor reply exists; none assumed |
+| D2 | WAITING FOR INSTRUCTOR CONFIRMATION | no instructor reply exists; none assumed; no address in any repository file |
+| D3 | DECIDED (user) | HTTP only for now; documented trade-off |
+| D4 | DECIDED (user) | single `cd.yml` |
+| D5 | DEFERRED (user) | decide after the priced estimate in T4.8 |
+| D6 | OPEN | not answered; treated as the working rule (user writes B4 tests, Copilot prompts, screenshots) until the user says otherwise |
+| D7 | DECIDED (user) | staging first |
+| D8 | OPEN | not answered; needs separate approval before any branch-protection change |
+
 ## 3. Sequence and dependency graph
 
 ```
@@ -62,15 +75,15 @@ the SSM path and the ECR path exist; no production before staging passes; no rol
 ### RP1 - Decisions and housekeeping (P0)
 | Task | Rubric | Status | Required implementation (files) | Depends | Validation and evidence | Security | Acceptance | Cx |
 |---|---|---|---|---|---|---|---|---|
-| T1.1 | E, S4 | BLOCKED | Obtain answers D1-D8; record in `PROJECT_STATUS.md` decisions log. Draft the instructor question on SSM and live URL (text only) | none | answers recorded with date; instructor reply kept as evidence if received | no server address in the question | D1, D2, D3, D5 answered or marked "waiting" | Low |
-| T1.2 | I4 | PARTIAL | Merge PR #9 (needs your approval; branch is behind `main`, strict protection may demand an update merge, never a rebase) | approval | PR merged, `main` CI green | none | `main` contains docs commit `3470d36` | Low |
-| T1.3 | I4 | PARTIAL | Commit this audit and roadmap through a new docs branch and PR | T1.2, approval | PR checks green; gitleaks clean | secret scan before commit | both documents on `main` | Low |
+| T1.1 | E, S4 | DONE 2026-11-21 (D1 and D2 recorded as waiting for the instructor; D3 and D5 recorded; the instructor question is drafted in `docs/INSTRUCTOR_CLARIFICATION_DRAFT.md` and NOT sent; it is for the user to send) | Obtain answers D1-D8; record in `PROJECT_STATUS.md` decisions log. Draft the instructor question on SSM and live URL (text only) | none | answers recorded with date; instructor reply kept as evidence if received | no server address in the question | D1, D2, D3, D5 answered or marked "waiting" | Low |
+| T1.2 | I4 | DONE 2026-11-21 (PR #9 merged with a normal merge commit 75d1d93; post-merge CI run 44859967355 success) | Merge PR #9 (needs your approval; branch is behind `main`, strict protection may demand an update merge, never a rebase) | approval | PR merged, `main` CI green | none | `main` contains docs commit `3470d36` | Low |
+| T1.3 | I4 | IN PROGRESS: the audit and roadmap were committed through PR #9 (a24e7ca); the README, tracking updates and instructor draft are reviewed locally and wait for the owner's approval to stage and commit (the branch must be created from the current `origin/main`) | Commit the README, the instructor draft and the tracking updates through a new docs branch and PR | T1.2, approval | PR checks green; gitleaks clean | secret scan before commit | both documents on `main` | Low |
 | T1.4 | I1, I3 | PARTIAL | Reconcile stale docs: `CLAUDE.md` (layout, DB, SSH rule 12), `docs/ARCHITECTURE.md`, `docs/OIDC_DESIGN.md`, `docs/GITHUB_SETUP.md`, `infra/terraform/REMEDIATION_LOG.md` (Terraform CI line). `CLAUDE.md` changes need your approval because they are project rules | D1 | grep for "SSH", "single instance", "Docker" in docs; consistency read-through | keep rules 1-11 intact | no document contradicts the chosen design | Medium |
 
 ### RP2 - README skeleton and CI completion (P1 for marks, P3 for polish; no AWS)
 | Task | Rubric | Status | Required implementation (files) | Depends | Validation and evidence | Security | Acceptance | Cx |
 |---|---|---|---|---|---|---|---|---|
-| T2.1 | A1-A4, C6, D5, F3, I1 | NOT IMPLEMENTED | Create `README.md`: overview, stack, Part A section for management, incident-to-feature table, chosen approach, workflow/job/step/runner diagram (Mermaid or SVG checked against the real workflows), secrets/variables table (names and purposes), strategy and trade-offs, local setup, test commands. Sections not yet provable say "pending" | none (live URL stays a placeholder) | link and Markdown check; diagram compared line by line with `ci.yml`; a read-through by a second person | no address, key or ARN-like value; names only | every statement is true today or marked pending | Medium |
+| T2.1 | A1-A4, C6, D5, F3, I1 | ACCEPTED by independent review 2026-11-21 (README.md; claims compared with workflows, Terraform, scripts, code and GitHub run history; links checked; both Mermaid diagrams rendered locally with mermaid-cli 11.4.2). Caveats: still UNCOMMITTED and not merged; GitHub's own rendering not verified; the reviewer was an AI assistant, so the owner's read-through is still advised | Create `README.md`: overview, stack, Part A section for management, incident-to-feature table, chosen approach, workflow/job/step/runner diagram (Mermaid or SVG checked against the real workflows), secrets/variables table (names and purposes), strategy and trade-offs, local setup, test commands. Sections not yet provable say "pending" | none (live URL stays a placeholder) | link and Markdown check; diagram compared line by line with `ci.yml`; a read-through by a second person | no address, key or ARN-like value; names only | every statement is true today or marked pending | Medium |
 | T2.2 | B, C | PARTIAL | `.github/dependabot.yml` for npm (frontend, backend), GitHub Actions, Docker, Terraform | T1.2, approval | Dependabot runs appear; PRs not auto-merged | pinned versions kept | file valid; first PRs reviewed | Low |
 | T2.3 | B5, C2 | PARTIAL | Document the required checks in the README; decide D8. Add a pass-through job to `terraform-ci.yml` so its checks can be required (branch-protection change needs your approval) | D8, approval | protection read-back via `gh api` | do not weaken admin enforcement | read-back matches README table | Medium |
 | T2.4 | B4 | PARTIAL | You write the tests from `docs/PHASE2_TEST_SPECS.md`; I review | D6 | test run output saved under `docs/evidence/` | none | tests you can explain; CI green | Medium |
