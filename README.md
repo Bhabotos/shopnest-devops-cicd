@@ -131,7 +131,7 @@ GitHub renders these diagrams from the Mermaid source; rendering on GitHub has *
 | `infra/terraform/` | Terraform for AWS, plus its architecture, security review, remediation log and integration-gap report |
 | `.github/workflows/` | `ci.yml`, `cd.yml`, `rollback.yml`, `terraform-ci.yml`, `pipeline-demo.yml` (Part H demonstration) |
 | `.githooks/` | versioned pre-commit hook that runs gitleaks |
-| `docs/` | AWS staging integration, architecture, GitHub setup, OIDC design, requirements checklist, audit, roadmap, Copilot and run evidence |
+| `docs/` | AWS staging integration, architecture, GitHub setup, OIDC design, requirements checklist, audit, roadmap, Copilot and run evidence, and the Part H failure write-up (`docs/failures/`) |
 | `assignment/` | the assignment brief (kept out of version control) |
 
 ## Local development
@@ -367,13 +367,13 @@ Status words: **Done** = real evidence exists; **Partial** = built, with the gap
 | Part | Marks | Status | Where |
 |---|---|---|---|
 | A. CI/CD concepts | 5 | Written in this README; awaiting the owner's review | [Part A](#part-a-cicd-concepts-for-shopnest-management) |
-| B. CI pipeline | 15 | Partial: CI passes on GitHub; the owner's own tests and a failing-check demonstration are pending | [workflows](#github-actions-workflows) |
+| B. CI pipeline | 15 | Partial: CI passes on GitHub; a failing required check blocking a merge is demonstrated by the deliberate failing test on PR #28 (screenshots pending); the owner's own tests are pending | [workflows](#github-actions-workflows) |
 | C. Workflow architecture | 10 | Partial: CI, matrix, parallel jobs, artifact done; the rewritten CD never run; screenshots pending | [workflows](#github-actions-workflows) |
 | D. Secrets and configuration | 10 | Partial: no secrets in the repo; OIDC, Secrets Manager and the operator role are written as code, not applied; GitHub Environments, the approval gate and real secret usage pending | [secrets](#secrets-and-variables) |
 | E. Deployment to EC2 | 15 | Pending: Terraform and the deployment code are written, nothing is deployed | [Terraform](#terraform-infrastructure) |
 | F. Zero downtime | 15 | Partial: local evidence only; the AWS path is not exercised | [strategy](#zero-downtime-strategy-and-trade-offs) |
 | G. Monitoring and rollback | 15 | Partial: local and offline evidence only; the rewritten rollback workflow never run | [rollback](#rollback-strategy) |
-| H. Debugging and Copilot | 10 | Partial: two deliberate failures each with a failed and a recovery run, and Copilot documentation (see [Evidence](#evidence-and-workflow-links)); the third failure (a failing test), screenshots, root-cause write-ups and Copilot troubleshooting evidence are pending | [evidence](#evidence-and-workflow-links) |
+| H. Debugging and Copilot | 10 | Partial: three deliberate failures (YAML syntax error, deployment health check, failing test), each with a failed and a recovery run, root cause and fix reference, written up in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md); Copilot's generation of `pipeline-demo.yml` is documented in [`docs/copilot/`](docs/copilot/). **Not available:** the Copilot troubleshooting prompts and responses (see [Evidence](#evidence-and-workflow-links)); failure 2 has no fix commit (its recovery was a corrected workflow input). **Pending:** screenshots | [evidence](#evidence-and-workflow-links), [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md) |
 | I. Documentation | 5 | Partial: this README and the AWS integration document; screenshots and a clean-clone dry run pending | this file, [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md) |
 
 ## Evidence and workflow links
@@ -388,17 +388,25 @@ Workflow runs on GitHub (repository: <https://github.com/Bhabotos/shopnest-devop
 | [Terraform CI 44786392731](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44786392731) | static Terraform checks, success |
 | [CD 44860058198](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44860058198) | CD **skipped** (disabled by design; this run predates the rewrite) |
 | [pipeline-demo 44884178546](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884178546) | deliberate failure 1 of 3, **YAML syntax error** (branch `demo/yaml-syntax-error`) |
-| [pipeline-demo 44884710861](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884710861) | recovery from failure 1 (the fix commit) |
+| [pipeline-demo 44884710861](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884710861) | recovery from failure 1 (fix commit `d2b645c`) |
 | [pipeline-demo 44884809417](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884809417) | deliberate failure 2 of 3, **deployment health check** failed (manual dispatch) |
-| [pipeline-demo 44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635) | recovery from failure 2 (manual dispatch) |
+| [pipeline-demo 44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635) | recovery from failure 2 (a new manual dispatch on the same commit with a corrected workflow input; **no fix commit**) |
+| [CI 44920064307](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920064307) | deliberate failure 3 of 3, **failing test** on [PR #28](https://github.com/Bhabotos/shopnest-devops-cicd/pull/28) (branch `test/failing-config-default-port`): Backend (Node 22 and 24) failed, Backend Docker image skipped, merge blocked |
+| [CI 44920708004](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920708004) | recovery from failure 3 (fix commit `5472d40`): all six checks passed |
 
-The two deliberate failures and their recoveries are real runs that are kept and must not be deleted. The input used for failure 2 and what changed for its recovery are not recorded in the repository; the owner is to document them.
-The third failure (a failing test), the root-cause write-ups, the Copilot troubleshooting evidence and all screenshots are **pending**. The Copilot prompt and response records are in [`docs/copilot/`](docs/copilot/); they are the owner's records,
-labelled as not independently verified there.
+All three deliberate failures and their recoveries are real runs that are kept and must not be deleted. The full write-up (the deliberate change, the observed error, the root cause, what the evidence shows, the fix, and the run
+and commit links) is in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md). [PR #28](https://github.com/Bhabotos/shopnest-devops-cicd/pull/28) is a demonstration and is **deliberately left open and unmerged**.
+
+- **Verified evidence:** the six runs and the fix commits above; for failure 1, the line numbers and local parser messages recorded in its commit messages; for failure 2, the input values in the two run logs and the fact that the
+  failed and recovered runs are separate runs (attempt 1 each); for failure 3, the failing log (`expected 3000 to be 3001`) and the recovery.
+- **Not available:** the Copilot troubleshooting prompts and responses. The owner states that GitHub Copilot was used for troubleshooting but could not recall which failure it covered, and no conversation exists in the repository or
+  in its GitHub records, so none is claimed and none is reconstructed. The owner's own troubleshooting steps for failure 2 are not recalled, and failure 2 has no fix commit. The records in [`docs/copilot/`](docs/copilot/) cover how
+  `pipeline-demo.yml` was *generated* with Copilot; they are the owner's records and are labelled there as not independently verified.
+- **Pending:** all screenshots, and the text that GitHub's web page shows for the failure 1 run.
 
 Local evidence: [`docs/evidence/phase2/`](docs/evidence/phase2/) (lint, tests, build, stack verification, secret scans) and
 [`docs/evidence/bluegreen-local/`](docs/evidence/bluegreen-local/) (blue/green and rollback rehearsal; **local, not AWS, and before the AWS-mode changes**).
-Screenshots of runs and settings are **pending** and will be added under `docs/screenshots/`; no screenshot is claimed here.
+Screenshots of runs and settings are **pending** and will be added under `docs/screenshots/` (the Part H ones under `docs/screenshots/part-h/`); no screenshot is claimed here.
 
 ## Live URL
 
