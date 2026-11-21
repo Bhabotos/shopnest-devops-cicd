@@ -1,0 +1,93 @@
+# 02b: secure workflow response (12-point prompt)
+
+Mapping to Prompt 2 (`01-prompt.md`) is the owner's statement and is **PARTIAL**: not independently verified.
+
+## Copilot's chat response text (explanation and any wrapper text)
+Label: **UNAVAILABLE**. The exact chat response was not saved and has not been reconstructed. Copilot's
+explanation of the jobs and security controls must be copied manually from Copilot Chat if it still exists.
+
+## Workflow YAML
+Label: EXACT COPY of `.github/workflows/pipeline-demo.yml` as it was on disk when this file was written
+(SHA-256 prefix ca27b64966b42a2f, 1861 bytes). This is a copy of the file, **not** of the chat
+message. Whether the file is byte-identical to what Copilot displayed **cannot be independently verified**: its
+original unedited Copilot response is not available. No manual edits are claimed here, and none are ruled out.
+
+````yaml
+name: pipeline-demo
+
+on:
+  push:
+    branches:
+      - "demo/**"
+  workflow_dispatch:
+    inputs:
+      health_check_url:
+        description: "HTTPS endpoint to check"
+        required: false
+        type: string
+        default: "https://api.github.com/zen"
+
+permissions: {}
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  deploy-check:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check health endpoint
+        env:
+          HEALTH_CHECK_URL: ${{ inputs.health_check_url || 'https://api.github.com/zen' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$HEALTH_CHECK_URL" in
+            https://*) ;;
+            *)
+              echo "Health check URL must use HTTPS."
+              exit 1
+              ;;
+          esac
+
+          if ! http_code="$(curl \
+            --silent \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --connect-timeout 5 \
+            --max-time 20 \
+            --max-redirs 3 \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --location \
+            "$HEALTH_CHECK_URL" 2>/dev/null)"; then
+            echo "Health check request failed."
+            exit 1
+          fi
+
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Health check returned a non-success status."
+            exit 1
+          fi
+````
