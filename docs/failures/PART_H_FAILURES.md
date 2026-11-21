@@ -31,17 +31,19 @@ pipeline-demo.yml"), on branch `demo/yaml-syntax-error`, one line in `.github/wo
 ```
 (the colon after `runs-on` was removed).
 
-**Observed error.** Run 44884178546 (event `push`, branch `demo/yaml-syntax-error`, commit `7c526dc`) finished as `failure` with **0 jobs**. The run page
-says: *"This run likely failed because of a workflow file issue."* The exact line-numbered YAML error shown by GitHub is **PENDING YOUR INPUT** (screenshot).
+**Observed error.** Run 44884178546 (event `push`, branch `demo/yaml-syntax-error`, commit `7c526dc`) finished as `failure` with **0 jobs**. The GitHub CLI
+(`gh run view`) reports for this run: *"This run likely failed because of a workflow file issue."* The text that GitHub's web page shows for this run, including the line number of
+the YAML error, was not read and is **PENDING YOUR INPUT** (screenshot).
 
 **Root cause.** `runs-on ubuntu-latest` has no `:`, so it is not a `key: value` pair inside the job's mapping. The YAML parser rejects the file, GitHub
 marks the workflow invalid, and no job starts. The mistake is in the file's syntax, not in the application or the runner.
 
-**Troubleshooting steps.**
-1. The run shows no jobs and a workflow-file issue message, so the failure is before any step runs, in how the file is parsed.
-2. The only change in the commit is one line, so the suspect is that line.
+**What the evidence shows** (analysis of the run and the commit, written afterwards; **not a record of the steps that were taken**).
+1. The run has no jobs and a workflow-file issue message, which points to a failure before any step runs, in how the file is parsed.
+2. The only change in the commit is one line, so that line is the suspect.
 3. The line lacks the colon that every other key in the file has.
-4. Your own steps, and how you used Copilot: **PENDING YOUR INPUT** (replace steps 1 to 3 with what you actually did).
+
+**Troubleshooting steps actually taken, including any Copilot use.** **PENDING YOUR INPUT** (the project owner records them here).
 
 **Fix.** Commit [`d2b645c`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/d2b645c) ("demo: fix the YAML syntax error in pipeline-demo.yml"):
 ```diff
@@ -77,11 +79,12 @@ Health check request failed.
 **Root cause.** The `.invalid` top-level domain is reserved and can never resolve, so the HTTP request cannot connect. The step's script treats a failed request as a
 failed deployment check and exits 1, which is the intended behaviour. This is a configuration and connectivity failure, not a code defect.
 
-**Troubleshooting steps.**
-1. `backend-tests` passed, so the code was fine and only the deployment check failed.
-2. The failing step's log names the value of `HEALTH_CHECK_URL` and the message "Health check request failed", which means the request itself failed (not a non-2xx status).
+**What the evidence shows** (analysis of the run log and the workflow script, written afterwards; **not a record of the steps that were taken**).
+1. `backend-tests` passed, so the failure is limited to the deployment check.
+2. The failing step's log names the value of `HEALTH_CHECK_URL` and the message "Health check request failed". The script prints a different message for a non-2xx status, so the request itself failed.
 3. The URL ends in `.invalid`, which cannot resolve.
-4. Your own steps, and how you used Copilot: **PENDING YOUR INPUT**.
+
+**Troubleshooting steps actually taken, including any Copilot use.** **PENDING YOUR INPUT** (the project owner records them here).
 
 **Fix.** Re-run with a reachable endpoint: `HEALTH_CHECK_URL: https://api.github.com/zen` (the default). **There is no fix commit**, because the failure came from an input, not from the
 repository. See "Evidence gaps" below: the assignment asks for a link to the fix commit.
@@ -96,8 +99,8 @@ repository. See "Evidence gaps" below: the assignment asks for a link to the fix
 
 **Description.** A unit test that asserts a wrong value, caught by the required CI checks on a pull request.
 
-**Deliberate change.** Commit [`a3282f4`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/a3282f41f43f96f0fc3b3a1aed5f3ec74d6d8c59), authored by the project owner, who confirmed it was introduced
-deliberately for this assignment. Branch `test/failing-config-default-port`, PR [#28](https://github.com/Bhabotos/shopnest-devops-cicd/pull/28) ("DO NOT MERGE"):
+**Deliberate change.** Commit [`a3282f4`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/a3282f41f43f96f0fc3b3a1aed5f3ec74d6d8c59). The edit was made by the project owner, who confirmed it was introduced
+deliberately for this assignment. The commit and the pull request were created with Claude Code's assistance, under the owner's Git identity. Branch `test/failing-config-default-port`, PR [#28](https://github.com/Bhabotos/shopnest-devops-cicd/pull/28) ("DO NOT MERGE"):
 ```diff
    it('falls back to the default for a non-numeric port', () => {
 -    expect(loadConfig({ PORT: 'abc' }).port).toBe(3000);
@@ -115,15 +118,15 @@ deliberately for this assignment. Branch `test/failing-config-default-port`, PR 
 **Root cause.** The test's expectation was wrong. `loadConfig` in `backend/src/config.js` correctly falls back to 3000 (`intFrom(env.PORT, 3000)`), and the first test in the same file also expects 3000.
 The code was right and the test was wrong.
 
-**Troubleshooting steps.**
+**Troubleshooting steps actually taken** (carried out with Claude Code's assistance during the session and checked against the run logs and the local test results).
 1. Open the failed run: only the two Backend jobs are red, at the Test step, so the problem is in the backend tests.
 2. The log names one failing test and shows `expected 3000 to be 3001` at line 34 of `test/config.test.js`.
 3. Read `backend/src/config.js`: the default port is 3000. So the application is correct and the assertion is wrong.
 4. Fix the assertion (not the code), and validate locally: `test/config.test.js` 5 of 5 passed; full backend suite 160 passed, 0 failed, 11 skipped (the PostgreSQL integration tests need a database
    and were skipped locally; CI ran them); lint clean.
-5. Your own use of Copilot to find this: **PENDING YOUR INPUT**.
+5. The project owner's own use of Copilot to find this: **PENDING YOUR INPUT**.
 
-**Fix.** Commit [`5472d40`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/5472d40c1ea4e9e54a453d3f8120a65ac3b71a46) ("fix(test): restore the expected default port to 3000 (recovery from failure 3)"):
+**Fix.** Commit [`5472d40`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/5472d40c1ea4e9e54a453d3f8120a65ac3b71a46) ("fix(test): restore the expected default port to 3000 (recovery from failure 3)"). The owner approved the fix; the commit was created with Claude Code's assistance:
 ```diff
 -    expect(loadConfig({ PORT: 'abc' }).port).toBe(3001);
 +    expect(loadConfig({ PORT: 'abc' }).port).toBe(3000);
@@ -157,13 +160,13 @@ that is explicitly not Copilot output. There is **no Copilot troubleshooting evi
 
 | # | Gap | Who | Needed for |
 |---|---|---|---|
-| G1 | Screenshots: failed run 44884178546 with the workflow-file error and its line number | you | failure 1 |
-| G2 | Screenshots: failed run 44884809417 (the failed step and `HEALTH_CHECK_URL` line) and recovered run 44885032635 | you | failure 2 |
-| G3 | Screenshots: failed run 44920064307, the expanded Test step, PR #28 blocked, then green; recovered run 44920708004 | you | failure 3 |
-| G4 | Your real Copilot troubleshooting prompt and answer for each of the three failures | you | all three |
-| G5 | Your own troubleshooting steps for failures 1 and 2 | you | failures 1, 2 |
-| G6 | Failure 2 has **no fix commit** to link (the fix was a corrected input). Decide how to document it; do not invent a commit | you | failure 2 |
-| G7 | How the failure 2 input was entered | you | failure 2 |
-| G8 | Commit times in `git log` are local time; run times above are UTC. State the timezone if times are quoted | you | all |
+| G1 | Screenshots: failed run 44884178546 with the workflow-file error and its line number | project owner | failure 1 |
+| G2 | Screenshots: failed run 44884809417 (the failed step and `HEALTH_CHECK_URL` line) and recovered run 44885032635 | project owner | failure 2 |
+| G3 | Screenshots: failed run 44920064307, the expanded Test step, PR #28 blocked, then green; recovered run 44920708004 | project owner | failure 3 |
+| G4 | The project owner's real Copilot troubleshooting prompt and answer for each of the three failures | project owner | all three |
+| G5 | The project owner's own troubleshooting steps for failures 1 and 2 | project owner | failures 1, 2 |
+| G6 | Failure 2 has **no fix commit** to link (the fix was a corrected input). Decide how to document it; do not invent a commit | project owner | failure 2 |
+| G7 | How the failure 2 input was entered | project owner | failure 2 |
+| G8 | Commit times in `git log` are local time; run times above are UTC. State the timezone if times are quoted | project owner | all |
 
 **Where the missing material goes:** screenshots under `docs/screenshots/part-h/`, referenced from this file. A link from the README's Evidence section is not added yet.
