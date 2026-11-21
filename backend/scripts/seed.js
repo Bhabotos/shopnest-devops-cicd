@@ -1,11 +1,8 @@
 import { createDb } from '../src/db.js';
+import { resolveDbConnection } from '../src/db-connection.js';
 import { assertSeedAllowed, seedProducts } from '../src/seed.js';
 
-if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL is not set');
-  process.exit(1);
-}
-
+// The environment guard runs first, so a refused seed never reads a secret or opens a connection.
 try {
   assertSeedAllowed();
 } catch (err) {
@@ -13,7 +10,15 @@ try {
   process.exit(1);
 }
 
-const db = createDb(process.env.DATABASE_URL, { statementTimeoutMs: 0 });
+let connection;
+try {
+  connection = await resolveDbConnection({ role: 'owner' });
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
+
+const db = createDb(connection, { statementTimeoutMs: 0 });
 try {
   await seedProducts(db);
   console.log('seed complete');

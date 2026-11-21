@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 *.pem
+# The one deliberate exception: the pinned, PUBLIC Amazon RDS CA bundle (see backend/certs/README.md). Not a secret.
+!backend/certs/rds-global-bundle.pem
 *.key
 *.ppk
 id_rsa*
