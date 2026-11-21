@@ -61,7 +61,8 @@ marks the workflow invalid, and no job starts. The mistake is in the file's synt
 
 **Recovered run.** [44884710861](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884710861), push, commit `d2b645c`, `success`.
 
-**Copilot troubleshooting.** PLACEHOLDER, **PENDING YOUR INPUT**:
+**Copilot troubleshooting.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified). Whether it was used for **this** failure, and the
+exact prompt, answer and changes, are **PENDING YOUR INPUT** and are not assumed to match any other failure. PLACEHOLDER:
 - Prompt (verbatim): ____
 - Copilot's answer (verbatim): ____
 - What I accepted or changed, and why: ____
@@ -73,9 +74,9 @@ marks the workflow invalid, and no job starts. The mistake is in the file's synt
 **Description.** The demo workflow's `deploy-check` job calls a health endpoint, as a deployment check would. A manual run was started with an
 endpoint that cannot be reached.
 
-**Deliberate change.** No commit. The run was started by `workflow_dispatch` on `demo/baseline` (commit `8feb5a0`) with the input
-`health_check_url = https://shopnest-demo-target.invalid/health` (read from the run log's `HEALTH_CHECK_URL`). The workflow's default is `https://api.github.com/zen`.
-How you entered the input (Actions UI or `gh workflow run`): **PENDING YOUR INPUT**.
+**Deliberate change.** No commit. The project owner started the run **manually from the GitHub Actions UI** (event `workflow_dispatch`) on `demo/baseline` (commit `8feb5a0`) and
+**personally entered** `https://shopnest-demo-target.invalid/health` in the `health_check_url` input. This is the owner's statement; the run log's `HEALTH_CHECK_URL` shows the same value.
+The workflow's default is `https://api.github.com/zen`.
 
 **Observed error.** Run 44884809417: job `backend-tests` = success, job `deploy-check` = **failure** at step *Check health endpoint*. Log:
 ```
@@ -98,9 +99,10 @@ failed deployment check and exits 1, which is the intended behaviour. This is a 
 (the workflow's default), and no file in the repository changed. **There is no fix commit**, because the failure came from an input and not from the repository, and none has been created.
 See "Evidence gaps" below: the assignment asks for a link to the fix commit.
 
-**Recovered run.** [44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635), `workflow_dispatch`, same commit `8feb5a0`: `deploy-check` = success, `backend-tests` = success.
+**Recovered run.** [44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635), `workflow_dispatch`, same commit `8feb5a0`: `deploy-check` = success, `backend-tests` = success. The log shows the default URL. How this recovery run was started (UI or CLI) has not been recorded.
 
-**Copilot troubleshooting.** PLACEHOLDER, **PENDING YOUR INPUT**: prompt (verbatim) ____ / answer (verbatim) ____ / what I changed ____
+**Copilot troubleshooting.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified). Whether it was used for **this** failure, and the
+exact prompt, answer and changes, are **PENDING YOUR INPUT** and are not assumed to match any other failure. PLACEHOLDER: prompt (verbatim) ____ / answer (verbatim) ____ / what I changed ____
 
 ---
 
@@ -133,7 +135,7 @@ The code was right and the test was wrong.
 3. Read `backend/src/config.js`: the default port is 3000. So the application is correct and the assertion is wrong.
 4. Fix the assertion (not the code), and validate locally: `test/config.test.js` 5 of 5 passed; full backend suite 160 passed, 0 failed, 11 skipped (the PostgreSQL integration tests need a database
    and were skipped locally; CI ran them); lint clean.
-5. The project owner's own use of Copilot to find this: **PENDING YOUR INPUT**.
+5. The project owner's own use of Copilot for this failure: **PENDING YOUR INPUT** (the owner states Copilot was used for troubleshooting; whether that covered this failure is not yet recorded).
 
 **Fix.** Commit [`5472d40`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/5472d40c1ea4e9e54a453d3f8120a65ac3b71a46) ("fix(test): restore the expected default port to 3000 (recovery from failure 3)"). The owner approved the fix; the commit was created with Claude Code's assistance:
 ```diff
@@ -144,7 +146,8 @@ The code was right and the test was wrong.
 **Recovered run.** [44920708004](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920708004) (pull request, `5472d40`): all six checks passed (Backend 22 and 24, Backend Docker image,
 Deploy scripts and Compose, Frontend 22 and 24, including the PostgreSQL integration tests). The merge state became CLEAN. PR #28 stays open and is not merged; it exists only as evidence.
 
-**Copilot troubleshooting.** PLACEHOLDER, **PENDING YOUR INPUT**: prompt (verbatim) ____ / answer (verbatim) ____ / what I changed ____
+**Copilot troubleshooting.** The project owner states that GitHub Copilot was used for troubleshooting (owner's statement, not independently verified). Whether it was used for **this** failure, and the
+exact prompt, answer and changes, are **PENDING YOUR INPUT** and are not assumed to match any other failure. PLACEHOLDER: prompt (verbatim) ____ / answer (verbatim) ____ / what I changed ____
 
 ---
 
@@ -161,7 +164,8 @@ After the fix commit, all required checks passed and the state became **CLEAN**.
 ## Existing Copilot evidence (not troubleshooting)
 
 `docs/copilot/` records how `pipeline-demo.yml` was **generated** with Copilot: the prompts (labelled EXACT or PARTIAL), the responses, the edits, and an assistant-written SHA comparison
-that is explicitly not Copilot output. There is **no Copilot troubleshooting evidence** in the repository yet. Part H asks for it for each failure.
+that is explicitly not Copilot output. **No Copilot troubleshooting conversation** is in the repository yet. The project owner states that GitHub Copilot was used for troubleshooting; this is the
+owner's statement and is not independently verified. Which failure(s) it covered, and the exact prompts and answers, are pending and are not assumed to be the same for each failure. Part H asks for the evidence for each failure.
 
 ---
 
@@ -172,10 +176,10 @@ that is explicitly not Copilot output. There is **no Copilot troubleshooting evi
 | G1 | Screenshots: failed run 44884178546 with the workflow-file error and its line number | project owner | failure 1 |
 | G2 | Screenshots: failed run 44884809417 (the failed step and `HEALTH_CHECK_URL` line) and recovered run 44885032635 | project owner | failure 2 |
 | G3 | Screenshots: failed run 44920064307, the expanded Test step, PR #28 blocked, then green; recovered run 44920708004 | project owner | failure 3 |
-| G4 | The project owner's real Copilot troubleshooting prompt and answer for each of the three failures | project owner | all three |
+| G4 | The project owner's real Copilot troubleshooting conversation(s): which failure(s) each covered, and the exact prompt, answer and changes for each (not assumed to be the same across failures). The owner states Copilot was used | project owner | all three |
 | G5 | The project owner's own troubleshooting steps for failures 1 and 2 | project owner | failures 1, 2 |
 | G6 | Failure 2 has **no fix commit** to link (the fix was a corrected input). Decide how to document it; do not invent a commit | project owner | failure 2 |
-| G7 | How the failure 2 input was entered | project owner | failure 2 |
+| G7 | **Resolved (owner's statement):** the owner started the failure 2 run from the GitHub Actions UI and entered the `.invalid` URL; the run log shows the same value | none | failure 2 |
 | G8 | **Resolved:** Git commit times are UTC+06:00 and run times are UTC (see "Timestamps" above) | none | all |
 
 **Where the missing material goes:** screenshots under `docs/screenshots/part-h/`, referenced from this file. A link from the README's Evidence section is not added yet.
