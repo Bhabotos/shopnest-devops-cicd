@@ -12,8 +12,16 @@ regex = '''\b(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[
 tags = ["network", "shopnest"]
 
 [rules.allowlist]
-description = "Loopback / wildcard bind addresses are not server addresses"
-regexes = ['''^(?:0\.0\.0\.0|127\.0\.0\.1)$''']
+description = "Loopback / wildcard bind addresses, the project's own private container network, and the EC2 metadata endpoint are not server addresses"
+regexes = [
+  '''^(?:0\.0\.0\.0|127\.0\.0\.1)$''',
+  # The Docker network that holds nginx and the two backend containers (deploy/env/<env>.env, deploy/host/). A private,
+  # host-local range chosen by this project: it identifies no server and is unreachable from outside the instance.
+  # Approved 2026-11-21 as a deliberately NARROW exception: only 172.29.x.x, not the private ranges in general.
+  '''^172\.29\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$''',
+  # The documented EC2 instance metadata endpoint: the same fixed link-local address on every instance, not a server.
+  '''^169\.254\.169\.254$''',
+]
 
 [[rules]]
 id = "shopnest-ec2-hostname"
