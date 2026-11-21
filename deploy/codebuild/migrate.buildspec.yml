@@ -1,0 +1,21 @@
+# The CodeBuild "migrator": applies the database migrations for one release, BEFORE that release is deployed.
+# It is the only place (besides the operator-started bootstrap) that can read the owner credentials. The deploy workflow
+# starts it with the exact release image (by ECR digest) as the image override, so these commands run inside the very image
+# that is about to be deployed, and RELEASE_SHA names the commit. A failure here fails the build, and the workflow does
+# not deploy: a failed migration blocks the deployment. Migrations are never reversed automatically.
+#
+# Nothing in this file prints a secret: the owner secret is read by the backend's own code (DB_OWNER_SECRET_ID), never here.
+version: 0.2
+
+phases:
+  build:
+    commands:
+      # Fail closed when this project is started WITHOUT the release image override: the default image has no /app.
+      - 'test -n "$RELEASE_SHA" || { echo "RELEASE_SHA is not set: start this project with the release image override and RELEASE_SHA"; exit 1; }'
+      - 'test -f /app/scripts/migrate.js || { echo "this is not the release image (no /app/scripts/migrate.js): refusing to run"; exit 1; }'
+      - 'echo "migrating for release $RELEASE_SHA"'
+      # Prove the private-subnet paths (RDS, ECR, Secrets Manager, CloudWatch Logs) before any database work.
+      - 'cd /app && node scripts/check-connectivity.js'
+      # Applies the pending migrations under the advisory lock, as shopnest_owner, over verified TLS.
+      - 'cd /app && node scripts/migrate.js'
+      - 'echo "migrations finished for release $RELEASE_SHA"'

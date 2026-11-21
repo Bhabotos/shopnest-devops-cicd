@@ -291,3 +291,6 @@ jobs:
           if grep -rnE --exclude=ci.yml 'docker-compose\.(test|dev)\.yml' .github deploy/scripts/lib deploy/scripts/bluegreen-deploy.sh deploy/scripts/rollback.sh; then
             echo "::error::the deploy path must not reference the dev or test Compose files"; exit 1
           fi
+      - name: SSM document scripts pass ShellCheck (static; extracted from the Terraform source)
+        # ShellCheck is preinstalled on ubuntu-latest, as for the "ShellCheck" step above.
+        run: bash deploy/tests/ssm-scripts.test.sh

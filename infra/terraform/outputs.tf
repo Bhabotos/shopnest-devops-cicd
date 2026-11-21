@@ -123,3 +123,35 @@ output "ecr_repository_arns" {
   description = "Repository ARNs by name."
   value       = { for k, r in aws_ecr_repository.app : k => r.arn }
 }
+
+# ---- CI/CD (null unless enable_cicd is true) ----------------------------------------------------------------------------------------
+
+output "github_deploy_role_arn" {
+  description = "ARN of the GitHub OIDC deploy role. The workflow's AWS_ROLE_ARN variable (set separately, with approval)."
+  value       = one(aws_iam_role.github_deploy[*].arn)
+}
+
+output "migrator_project_name" {
+  description = "CodeBuild migrator project: the workflow starts it with the release image (by digest) as the image override."
+  value       = one(aws_codebuild_project.migrator[*].name)
+}
+
+output "bootstrap_project_name" {
+  description = "CodeBuild bootstrap project: started ONLY by the operator role, with BOOTSTRAP_CONFIRM set."
+  value       = one(aws_codebuild_project.bootstrap[*].name)
+}
+
+output "bootstrap_operator_role_arn" {
+  description = "Role the authorised operator assumes (with MFA) to start the bootstrap."
+  value       = one(aws_iam_role.bootstrap_operator[*].arn)
+}
+
+output "ssm_deploy_document_name" {
+  description = "SSM command document the deploy workflow sends to the instance."
+  value       = one(aws_ssm_document.deploy[*].name)
+}
+
+output "ssm_rollback_document_name" {
+  description = "SSM command document the rollback workflow sends to the instance."
+  value       = one(aws_ssm_document.rollback[*].name)
+}

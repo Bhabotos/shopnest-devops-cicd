@@ -1,0 +1,17 @@
+# The CodeBuild "bootstrap": creates the two application roles (shopnest_owner, shopnest_app) on the private RDS instance.
+# Run ONCE per database, by the authorised operator only (the dedicated operator role with MFA). It is the only identity that
+# can read the RDS master secret. The operator starts it with the release image as the image override and with
+# BOOTSTRAP_CONFIRM=bootstrap-<environment>; without both it refuses to do anything. Neither the GitHub deployment role nor
+# the EC2 instance role can start it or read the master secret.
+#
+# Nothing in this file prints a secret: the three secrets are read by scripts/bootstrap-roles.js, which prints attributes only.
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - 'test -n "$RELEASE_SHA" || { echo "RELEASE_SHA is not set: start this project with the release image override and RELEASE_SHA"; exit 1; }'
+      - 'test -f /app/scripts/bootstrap-roles.js || { echo "this is not the release image (no /app/scripts/bootstrap-roles.js): refusing to run"; exit 1; }'
+      - 'cd /app && node scripts/check-connectivity.js'
+      # Refuses unless BOOTSTRAP_CONFIRM matches this environment, then runs the role statements in ONE transaction.
+      - 'cd /app && node scripts/bootstrap-roles.js'

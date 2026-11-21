@@ -13,11 +13,17 @@ on:
     branches: [main]
     paths:
       - "infra/terraform/**"
+      - "deploy/codebuild/**"
+      - "deploy/tests/terraform-iam.test.sh"
+      - "deploy/tests/terraform_iam_check.py"
       - ".github/workflows/terraform-ci.yml"
   push:
     branches: [main]
     paths:
       - "infra/terraform/**"
+      - "deploy/codebuild/**"
+      - "deploy/tests/terraform-iam.test.sh"
+      - "deploy/tests/terraform_iam_check.py"
       - ".github/workflows/terraform-ci.yml"
 
 concurrency:
@@ -73,6 +79,10 @@ jobs:
         run: terraform init -backend=false -input=false -lockfile=readonly
       - name: Validate
         run: terraform validate
+      - name: Static IAM and gating checks (reads the .tf source only; no AWS, no plan)
+        # Fails if a permission is widened by accident: the deploy role must stay secret-free, the instance role must never reach the
+        # owner or master secret, only the bootstrap may read the master secret, and everything CI/CD must stay gated by enable_cicd.
+        run: bash ../../deploy/tests/terraform-iam.test.sh
 
   secret-scan:
     name: Terraform secret scan
