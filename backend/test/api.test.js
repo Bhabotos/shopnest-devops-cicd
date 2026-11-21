@@ -59,6 +59,40 @@ describe('products', () => {
     });
   });
 
+  // The id reaches the database as a bound parameter ($1 plus a values array), never pasted into the SQL text.
+  it('GET /api/products/:id returns the product in the public shape', async () => {
+    const { app, db } = makeApp(vi.fn().mockResolvedValue({ rows: [productRow] }));
+    const res = await request(app).get('/api/products/1');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      id: 1,
+      sku: 'nest-tee',
+      name: 'Nest Cotton T-Shirt',
+      description: 'Soft tee.',
+      price: { amountMinor: 79900, currency: 'BDT' },
+      imageUrl: '/images/nest-tee.svg',
+      stock: 10,
+    });
+    const [sql, params] = db.query.mock.calls[0];
+    expect(params).toEqual([1]);
+    expect(sql).toContain('$1');
+  });
+
+  // 99999999999 is far beyond the PostgreSQL integer range. It must be refused at the edge, because
+  // sending it to the database would come back as a server error instead of a clean 400.
+  it.each(['99999999999', '2147483648'])(
+    'GET /api/products/%s is rejected before the database is queried',
+    async (id) => {
+      const { app, db } = makeApp();
+      const res = await request(app).get(`/api/products/${id}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('validation_error');
+      expect(db.query).not.toHaveBeenCalled();
+    },
+  );
+
   it('GET /api/products/:id returns 404 for an unknown product', async () => {
     const { app } = makeApp();
     const res = await request(app).get('/api/products/99');
