@@ -64,7 +64,7 @@ updates:
     commit-message:
       prefix: "chore(deps)"
 
-  # deploy/docker-compose.dev.yml, docker-compose.test.yml and docker-compose.prod.yml all live in /deploy.
+  # Compose manifests are maintained under /deploy.
   # PostgreSQL major bumps are ignored (the database version is chosen with the RDS design, not by a bot);
   # minor and patch updates still come through. shopnest-backend is built locally and is not a registry image.
   - package-ecosystem: docker-compose
