@@ -122,7 +122,13 @@ mkdir -p "$W/x1" && tar -xzf "$W/out1/bundle.tar.gz" -C "$W/x1"
 check "RELEASE_SHA is the commit" "$(cat "$W/x1/RELEASE_SHA")" "$SHA"
 check "the internal SHA256SUMS verifies" "$(cd "$W/x1" && sha256sum --check --strict SHA256SUMS > /dev/null 2>&1; echo $?)" 0
 check "the bundled scripts are the repository's" "$(cmp -s "$ROOT/deploy/scripts/lib/bluegreen-lib.sh" "$W/x1/deploy/scripts/lib/bluegreen-lib.sh" && echo same || echo different)" same
-check "the guard is executable in the bundle" "$([ -x "$W/x1/deploy/host/imds-guard.sh" ] && echo yes || echo no)" yes
+# The guard does not rely on a file mode kept in Git (a checkout on Windows cannot record one): it is invoked through bash by the deploy
+# path, and the host installer gives the INSTALLED copy mode 0755. These checks cover each of those facts in the bundle itself.
+check "the guard is in the bundle, byte for byte the repository's" "$(cmp -s "$ROOT/deploy/host/imds-guard.sh" "$W/x1/deploy/host/imds-guard.sh" && echo same || echo different)" same
+check "the host installer is in the bundle, byte for byte the repository's" "$(cmp -s "$ROOT/deploy/host/install-host-guards.sh" "$W/x1/deploy/host/install-host-guards.sh" && echo same || echo different)" same
+check "the bundled installer installs the guard with mode 0755" "$(grep -cF 'install -m 0755 "$HERE/imds-guard.sh" "$ROOT/usr/local/sbin/shopnest-imds-guard"' "$W/x1/deploy/host/install-host-guards.sh")" 1
+check "the bundled deploy path runs the guard through bash" "$(grep -cF 'bash "$BG_RELEASE_DIR/deploy/host/imds-guard.sh"' "$W/x1/deploy/scripts/lib/bluegreen-lib.sh")" 1
+check "and never executes it directly (no mode needed)" "$(grep -E '(^|[^a-z] )"\$BG_RELEASE_DIR/deploy/host/imds-guard\.sh"' "$W/x1/deploy/scripts/lib/bluegreen-lib.sh" | grep -vc 'bash ')" 0
 bash "$CI/build-bundle.sh" --mode release --sha "$SHA" --frontend-dist "$W/front" --out "$W/out1b" > /dev/null 2>&1
 check "the bundle is reproducible (same inputs, same SHA-256)" "$(cat "$W/out1b/bundle.sha256")" "$(cat "$W/out1/bundle.sha256")"
 echo "<html>changed</html>" > "$W/front/index.html"
