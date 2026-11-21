@@ -11,11 +11,15 @@ Repository: https://github.com/Bhabotos/shopnest-devops-cicd
 | # | Kind | Failed run | Fix | Recovered run |
 |---|---|---|---|---|
 | 1 | YAML syntax error | [44884178546](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884178546) (push, `7c526dc`) | commit [`d2b645c`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/d2b645c) | [44884710861](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884710861) |
-| 2 | Deployment / connection failure (health check) | [44884809417](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884809417) (manual dispatch, `8feb5a0`) | a corrected input, **no commit** (see the gap below) | [44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635) |
+| 2 | Deployment / connection failure (health check) | [44884809417](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44884809417) (manual dispatch, `8feb5a0`) | a corrected workflow input on the same commit `8feb5a0`; **no fix commit** (see the gap below) | [44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635) |
 | 3 | Failing test | [44920064307](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920064307) (PR #28, `a3282f4`) | commit [`5472d40`](https://github.com/Bhabotos/shopnest-devops-cicd/commit/5472d40c1ea4e9e54a453d3f8120a65ac3b71a46) | [44920708004](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920708004) |
 
 All failed runs are kept in the Actions history and must not be deleted. Failures 1 and 2 use the demonstration workflow
 `.github/workflows/pipeline-demo.yml` (generated with GitHub Copilot, see `docs/copilot/`). Failure 3 uses the real CI workflow.
+
+**Timestamps.** Git commit times are recorded in **UTC+06:00** (the author and committer dates of `7c526dc`, `d2b645c`, `a3282f4` and `5472d40` all carry the offset `+0600`).
+GitHub run times are in **UTC**. Worked example: `7c526dc` is dated 13:48:27 +0600, which is 07:48:27 UTC, and its failed run started at 08:17:27 UTC, so the push came after the commit.
+`d2b645c` is dated 14:23:01 +0600, which is 08:23:01 UTC, and its recovered run started at 08:24:06 UTC.
 
 ---
 
@@ -34,6 +38,10 @@ pipeline-demo.yml"), on branch `demo/yaml-syntax-error`, one line in `.github/wo
 **Observed error.** Run 44884178546 (event `push`, branch `demo/yaml-syntax-error`, commit `7c526dc`) finished as `failure` with **0 jobs**. The GitHub CLI
 (`gh run view`) reports for this run: *"This run likely failed because of a workflow file issue."* The text that GitHub's web page shows for this run, including the line number of
 the YAML error, was not read and is **PENDING YOUR INPUT** (screenshot).
+
+**Run-name evidence (read from the GitHub API on 2026-11-21).** The failed run 44884178546 is named `.github/workflows/pipeline-demo.yml`, the **file path**, instead of
+the workflow's `name:` value. The recovered run 44884710861, on the fixed commit `d2b645c`, is named `pipeline-demo`. A run named with the file path is consistent with GitHub being unable to
+read the workflow file, which matches the syntax error. This is an observation from the API: it does not give the error message or the line number, which stay pending above.
 
 **Root cause.** `runs-on ubuntu-latest` has no `:`, so it is not a `key: value` pair inside the job's mapping. The YAML parser rejects the file, GitHub
 marks the workflow invalid, and no job starts. The mistake is in the file's syntax, not in the application or the runner.
@@ -86,8 +94,9 @@ failed deployment check and exits 1, which is the intended behaviour. This is a 
 
 **Troubleshooting steps actually taken, including any Copilot use.** **PENDING YOUR INPUT** (the project owner records them here).
 
-**Fix.** Re-run with a reachable endpoint: `HEALTH_CHECK_URL: https://api.github.com/zen` (the default). **There is no fix commit**, because the failure came from an input, not from the
-repository. See "Evidence gaps" below: the assignment asks for a link to the fix commit.
+**Fix.** The recovery was a **corrected workflow input on the same commit** (`8feb5a0`): the run was started again with a reachable endpoint, `HEALTH_CHECK_URL: https://api.github.com/zen`
+(the workflow's default), and no file in the repository changed. **There is no fix commit**, because the failure came from an input and not from the repository, and none has been created.
+See "Evidence gaps" below: the assignment asks for a link to the fix commit.
 
 **Recovered run.** [44885032635](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44885032635), `workflow_dispatch`, same commit `8feb5a0`: `deploy-check` = success, `backend-tests` = success.
 
@@ -167,6 +176,6 @@ that is explicitly not Copilot output. There is **no Copilot troubleshooting evi
 | G5 | The project owner's own troubleshooting steps for failures 1 and 2 | project owner | failures 1, 2 |
 | G6 | Failure 2 has **no fix commit** to link (the fix was a corrected input). Decide how to document it; do not invent a commit | project owner | failure 2 |
 | G7 | How the failure 2 input was entered | project owner | failure 2 |
-| G8 | Commit times in `git log` are local time; run times above are UTC. State the timezone if times are quoted | project owner | all |
+| G8 | **Resolved:** Git commit times are UTC+06:00 and run times are UTC (see "Timestamps" above) | none | all |
 
 **Where the missing material goes:** screenshots under `docs/screenshots/part-h/`, referenced from this file. A link from the README's Evidence section is not added yet.
