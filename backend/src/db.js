@@ -3,8 +3,10 @@ import { createLogger } from './logger.js';
 
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]*$/;
 
+// `connection` is a connection string, or a node-postgres connection object ({ host, port, database,
+// user, password, ssl }) as returned by resolveDbConnection for RDS.
 export function createDb(
-  connectionString,
+  connection,
   {
     logger = createLogger(),
     max = 10,
@@ -21,7 +23,7 @@ export function createDb(
   }
 
   const pool = new pg.Pool({
-    connectionString,
+    ...(typeof connection === 'string' ? { connectionString: connection } : connection),
     max,
     connectionTimeoutMillis: connectionTimeoutMs,
     idleTimeoutMillis: idleTimeoutMs,
@@ -52,6 +54,17 @@ export function createDb(
           discard = true;
         });
         throw err;
+      } finally {
+        client.release(discard);
+      }
+    },
+
+    // One dedicated connection for work that needs a SESSION (an advisory lock, for example). With discard the
+    // connection is destroyed afterwards, so a session-level lock can never outlive the work, even if unlocking failed.
+    async withClient(work, { discard = false } = {}) {
+      const client = await pool.connect();
+      try {
+        return await work(client);
       } finally {
         client.release(discard);
       }

@@ -13,6 +13,9 @@ COPY package.json ./
 COPY src ./src
 COPY scripts ./scripts
 COPY migrations ./migrations
+# The pinned RDS CA bundle (see certs/README.md): the backend, the migrator and the bootstrap job verify the database
+# certificate against it. It is public data, not a secret.
+COPY certs ./certs
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \

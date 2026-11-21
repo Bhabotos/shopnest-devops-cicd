@@ -1,17 +1,22 @@
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createDb } from './db.js';
+import { resolveDbConnection } from './db-connection.js';
 import { createLogger } from './logger.js';
 
 const config = loadConfig();
 const logger = createLogger({ level: config.logLevel });
 
-if (!config.databaseUrl) {
-  logger.error('DATABASE_URL is not set');
+let connection;
+try {
+  connection = await resolveDbConnection({ role: 'app' });
+} catch (err) {
+  // The message never contains a secret value (see db-connection.js).
+  logger.error('database configuration error', { error: err.message });
   process.exit(1);
 }
 
-const db = createDb(config.databaseUrl, {
+const db = createDb(connection, {
   logger,
   max: config.db.poolMax,
   connectionTimeoutMs: config.db.connectionTimeoutMs,
