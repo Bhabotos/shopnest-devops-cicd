@@ -46,6 +46,16 @@ describe('cartReducer', () => {
     expect(lines).toEqual([{ product: product(), quantity: 1 }]);
   });
 
+  it('F9: setQuantity ignores non-integers and unknown product ids', () => {
+    const lines = [{ product: product(), quantity: 2 }];
+
+    // A non-integer quantity returns the very same array: nothing was even rebuilt.
+    expect(cartReducer(lines, { type: 'setQuantity', productId: 1, quantity: Number.NaN })).toBe(lines);
+    expect(cartReducer(lines, { type: 'setQuantity', productId: 1, quantity: 1.5 })).toBe(lines);
+    // An unknown product id leaves every line as it was.
+    expect(cartReducer(lines, { type: 'setQuantity', productId: 99, quantity: 3 })).toEqual(lines);
+  });
+
   it('removes and clears lines', () => {
     const start = [
       { product: product({ id: 1 }), quantity: 1 },
