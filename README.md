@@ -173,15 +173,19 @@ flowchart TB
 | `terraform-ci.yml` | Terraform-related pushes and pull requests | **runs and passes**; static checks only, no AWS access |
 
 **Required checks** on `main` (branch protection, verified by reading the settings on 2026-11-21): Frontend (Node 22), Frontend (Node 24), Backend (Node 22),
-Backend (Node 24), Backend Docker image; branches must be up to date and the rules apply to administrators. "Deploy scripts and Compose" and the Terraform checks are not required.
-A demonstration of a failing check blocking a merge is still **pending**.
+Backend (Node 24), Backend Docker image (each bound to the GitHub Actions app); a pull request is required (0 approvals), branches must be up to date, the rules apply to administrators, and force pushes and branch deletion are disabled
+(**verified live configuration**, written read-back: [`docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md`](docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md), not a raw API response or screenshot).
+"Deploy scripts and Compose" and the Terraform checks are **not** required: the deployment validation is not yet mature enough to be a mandatory merge gate, so only the five application CI checks are mandatory.
+Conversation resolution is intentionally disabled (accepted configuration for a single-maintainer assignment project).
+**Project convention:** pull requests are merged with a normal merge commit. Squash and rebase merging remain **enabled** in GitHub, so this is a working convention, not an enforced restriction.
+A demonstration of a failing required check blocking a merge is still **pending**.
 
 The CD diagram above is simplified: in the file, `package` needs `gate`, `deploy-staging` needs `gate` and `package`, `deploy-production` needs `gate`, `package` and `deploy-staging`, and `report` needs all four.
 All workflows declare explicit `permissions:` and every `uses:` reference is pinned to a commit SHA (checked 2026-11-21).
 
 ## Secrets and variables
 
-None of these hold a value in the repository. **Today the repository has 0 Actions secrets, 0 variables and no GitHub Environments.**
+None of these hold a value in the repository. **Read-only snapshot from 2026-11-21: 0 Actions secrets, 0 Actions variables, 0 Dependabot secrets and 0 GitHub Environments, and `CD_ENABLED` is unset** (recorded in [`docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md`](docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md)). This is a point-in-time state, not a permanent configuration: they will be created when the deployment phases need them. CD stays disabled while `CD_ENABLED` is unset.
 The table lists what the current (disabled) workflows reference and what the planned design needs.
 
 | Name | Kind | Purpose | Status |
@@ -194,7 +198,7 @@ The table lists what the current (disabled) workflows reference and what the pla
 | `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS` | secrets | SSH deployment key and host key | obsolete under the SSM design |
 
 The planned SSM/ECR design removes the SSH names and adds no AWS access key; the final list will be updated here when the workflows are rewritten.
-Separate configuration for staging and production exists as non-secret files in [`deploy/env/`](deploy/env/); GitHub Environments `staging` and `production` are **not yet created**.
+Separate configuration for staging and production exists as non-secret files in [`deploy/env/`](deploy/env/); GitHub Environments `staging` and `production` were **not yet created** as of the 2026-11-21 snapshot.
 Database passwords are never in the repository: locally they come from the untracked `deploy/.env`; in AWS they are meant to come from AWS Secrets Manager (not yet integrated).
 
 ## Terraform infrastructure
