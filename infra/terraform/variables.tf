@@ -400,3 +400,107 @@ variable "artifact_noncurrent_versions_kept" {
     error_message = "artifact_noncurrent_versions_kept must be at least 1."
   }
 }
+
+# ---- CI/CD: GitHub OIDC deploy role, CodeBuild migrator and bootstrap, SSM documents ------------------------------------------
+# All of this is gated by enable_cicd (default false): with it off, none of it exists and the plan is the same as before.
+# Turning it on needs real values (below) in your own untracked variable file. Nothing here is a secret.
+
+variable "enable_cicd" {
+  description = "Create the CI/CD resources: the GitHub OIDC deploy role, the CodeBuild migrator and bootstrap projects (private subnets), their roles and security groups, the operator role, and the two SSM command documents. Default false."
+  type        = bool
+  default     = false
+}
+
+variable "github_repository" {
+  description = "The GitHub repository allowed to deploy, as owner/name. Required when enable_cicd is true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_repository == "" || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "github_repository must look like owner/name."
+  }
+}
+
+variable "github_oidc_subjects" {
+  description = "The exact OIDC 'sub' claim(s) allowed to assume the deploy role, for example one for this repository's staging environment. Capture the REAL claim from a workflow run (a newer repository may use ID-based, immutable claims); do not guess it. Matched with StringEquals: wildcards are refused."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.github_oidc_subjects : length(s) > 0 && !can(regex("[*?]", s))])
+    error_message = "Each OIDC subject must be non-empty and must not contain wildcards (* or ?)."
+  }
+}
+
+variable "create_github_oidc_provider" {
+  description = "Create the account's GitHub OIDC identity provider. An account can hold only ONE provider for token.actions.githubusercontent.com: check first whether it already exists, and if it does set this to false and give github_oidc_provider_arn."
+  type        = bool
+  default     = false
+}
+
+variable "github_oidc_provider_arn" {
+  description = "ARN of an existing GitHub OIDC identity provider in this account (used when create_github_oidc_provider is false)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_oidc_provider_arn == "" || can(regex("^arn:aws:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$", var.github_oidc_provider_arn))
+    error_message = "github_oidc_provider_arn must be the ARN of the token.actions.githubusercontent.com OIDC provider."
+  }
+}
+
+variable "operator_principal_arns" {
+  description = "IAM users or roles (ARNs) allowed to assume the bootstrap operator role. The role requires MFA. These are people, never CI."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for a in var.operator_principal_arns : can(regex("^arn:aws:iam::[0-9]{12}:(user|role)/.+$", a))])
+    error_message = "Each operator principal must be the ARN of an IAM user or role."
+  }
+}
+
+variable "db_owner_secret_name" {
+  description = "Name (the part after '<project>/<environment>/') of the owner secret, readable ONLY by the CodeBuild migrator and bootstrap roles. It is deliberately not in db_secret_names: the instance role must never read it."
+  type        = string
+  default     = "db-owner"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.@+=-]+$", var.db_owner_secret_name)) && !contains(var.db_secret_names, var.db_owner_secret_name)
+    error_message = "db_owner_secret_name must be a plain secret name and must NOT be listed in db_secret_names (the instance role must not be able to read the owner secret)."
+  }
+}
+
+variable "codebuild_compute_type" {
+  description = "CodeBuild compute size for the migrator and bootstrap projects."
+  type        = string
+  default     = "BUILD_GENERAL1_SMALL"
+
+  validation {
+    condition     = contains(["BUILD_GENERAL1_SMALL", "BUILD_GENERAL1_MEDIUM"], var.codebuild_compute_type)
+    error_message = "codebuild_compute_type must be BUILD_GENERAL1_SMALL or BUILD_GENERAL1_MEDIUM."
+  }
+}
+
+variable "codebuild_timeout_minutes" {
+  description = "Time limit of a migrator or bootstrap build, in minutes. A migration that needs longer should be split."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.codebuild_timeout_minutes >= 5 && var.codebuild_timeout_minutes <= 60
+    error_message = "codebuild_timeout_minutes must be between 5 and 60."
+  }
+}
+
+variable "log_retention_days" {
+  description = "Days to keep the CodeBuild logs in CloudWatch Logs."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = contains([7, 14, 30, 60, 90, 180, 365], var.log_retention_days)
+    error_message = "log_retention_days must be one of 7, 14, 30, 60, 90, 180, 365."
+  }
+}
