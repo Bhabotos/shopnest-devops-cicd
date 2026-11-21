@@ -291,6 +291,19 @@ jobs:
           if grep -rnE --exclude=ci.yml 'docker-compose\.(test|dev)\.yml' .github deploy/scripts/lib deploy/scripts/bluegreen-deploy.sh deploy/scripts/rollback.sh; then
             echo "::error::the deploy path must not reference the dev or test Compose files"; exit 1
           fi
+      - name: Offline CI-helper tests (bundle, image push, migrator, Systems Manager runner; fake aws and docker)
+        run: bash deploy/tests/ci-helpers.test.sh
       - name: SSM document scripts pass ShellCheck (static; extracted from the Terraform source)
         # ShellCheck is preinstalled on ubuntu-latest, as for the "ShellCheck" step above.
         run: bash deploy/tests/ssm-scripts.test.sh
+      - name: Install PyYAML (pinned, in a virtual environment) for the workflow checker
+        # The workflow checker parses YAML with Python. A virtual environment is used because the runner's system Python refuses
+        # `pip install` into itself; putting it first on the PATH makes `python3` the one that has PyYAML.
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/yaml-venv"
+          "$RUNNER_TEMP/yaml-venv/bin/python" -m pip install --quiet --disable-pip-version-check "pyyaml==6.0.3"
+          echo "$RUNNER_TEMP/yaml-venv/bin" >> "$GITHUB_PATH"
+      - name: Deployment workflows are SSM-only, credential-free and fail closed (static)
+        # Replaces the old "SSH steps stay identical" check: there is no SSH any more, so the rule is that none can come back.
+        run: bash deploy/tests/workflows.test.sh
