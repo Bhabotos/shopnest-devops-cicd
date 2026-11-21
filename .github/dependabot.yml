@@ -1,0 +1,87 @@
+# Dependabot version updates. Terraform is deliberately not listed yet: nothing has been planned
+# against AWS, so provider bumps would only add noise (infra/terraform/.terraform.lock.hcl is reviewed by hand).
+# Minor and patch updates are grouped per ecosystem; major updates arrive as separate pull requests
+# for manual review. Open pull request limits add up to at most 9 version-update PRs.
+#
+# Not covered, update by hand together with the files below:
+#   - postgres in .github/workflows/ci.yml (services.postgres.image): Dependabot does not read workflow
+#     service containers. Keep it identical to deploy/docker-compose.{dev,test,prod}.yml.
+#   - nginxinc/nginx-unprivileged appears in frontend/Dockerfile (docker ecosystem) and in
+#     deploy/docker-compose.prod.yml (docker-compose ecosystem): the two PRs must be merged together.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+
+  # Actions are pinned to a commit SHA with a "# vX.Y.Z" comment; Dependabot updates both together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "ci(deps)"
+
+  # backend/Dockerfile and frontend/Dockerfile. The project supports Node 22 and 24 only, so Node
+  # major bumps are ignored; minor and patch updates of every image still come through.
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
+    groups:
+      docker-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(deps)"
+
+  # deploy/docker-compose.dev.yml, docker-compose.test.yml and docker-compose.prod.yml all live in /deploy.
+  # PostgreSQL major bumps are ignored (the database version is chosen with the RDS design, not by a bot);
+  # minor and patch updates still come through. shopnest-backend is built locally and is not a registry image.
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: postgres
+        update-types:
+          - version-update:semver-major
+      - dependency-name: shopnest-backend
+    groups:
+      compose-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(deps)"
