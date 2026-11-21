@@ -12,17 +12,21 @@ export const SEED_PRODUCTS = [
   { sku: 'nest-socks', name: 'Nest Sock Pair', description: 'Breathable cotton blend socks.', price: 29900, stock: 100 },
 ];
 
-// Seeding is explicit, never part of a deployment. It is allowed without a flag only in
-// development and test; anywhere else (including an unset NODE_ENV) it needs an explicit opt-in.
+// Seeding is explicit, never part of a deployment. Policy (exact string matches only: no trimming,
+// no case folding):
+//   - NODE_ENV "development" or "test": allowed, whatever ALLOW_PRODUCTION_SEED says.
+//   - NODE_ENV "production": allowed only with ALLOW_PRODUCTION_SEED set to exactly "true".
+//   - anything else (staging, an unknown name, empty or unset): refused, even with the flag. A staging
+//     or unrecognised environment is not a place to opt in from; the one deliberate override is production.
 const SEED_ENVIRONMENTS = new Set(['development', 'test']);
 
 export function assertSeedAllowed(env = process.env) {
   if (SEED_ENVIRONMENTS.has(env.NODE_ENV)) return;
-  if (env.ALLOW_PRODUCTION_SEED === 'true') return;
+  if (env.NODE_ENV === 'production' && env.ALLOW_PRODUCTION_SEED === 'true') return;
   throw new Error(
     `Refusing to seed: NODE_ENV is "${env.NODE_ENV ?? 'unset'}". ` +
-      'Outside development/test, set ALLOW_PRODUCTION_SEED=true and run it manually ' +
-      'or from an explicitly triggered workflow.',
+      'Seeding is allowed in development and test; in production it needs ALLOW_PRODUCTION_SEED=true ' +
+      'and must be run manually or from an explicitly triggered workflow.',
   );
 }
 
