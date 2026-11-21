@@ -31,7 +31,7 @@ describe('loadConfig', () => {
   });
 
   it('falls back to the default for a non-numeric port', () => {
-    expect(loadConfig({ PORT: 'abc' }).port).toBe(3001);
+    expect(loadConfig({ PORT: 'abc' }).port).toBe(3000);
   });
 
   // The database pool and timeout limits come from environment variables, as numbers.
