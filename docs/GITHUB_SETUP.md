@@ -39,16 +39,34 @@ Settings -> Actions -> General:
 - Require approval for workflows from outside collaborators/forks: enabled
 - Do not delete workflow runs at any time (failed runs are graded evidence)
 
-## 4. Environments (Part D)
-Settings -> Environments:
-| Environment | Protection |
-|---|---|
-| `staging` | Deployment branches: `main` only. No reviewers. |
-| `production` | Deployment branches: `main` only. Required reviewers: the repo owner. |
+## 4. Environments and variables (Part D)
+**Current state (read 2026-11-22): 0 Environments, 0 secrets, 0 variables.** Creating any of the items below is a GitHub settings change and needs the user's explicit approval. Values are never written in the repository.
 
-Note: with a single maintainer, leave "Prevent self-review" OFF for `production`, otherwise
-nobody can approve. Secrets and variables are created per Environment (names in README, values never).
-See docs/OIDC_DESIGN.md for the planned names.
+Settings -> Environments:
+| Environment | Protection | Used by |
+|---|---|---|
+| `staging` | Deployment branches: `main` only. A required reviewer is recommended. | `deploy-staging` in `cd.yml` and the deploy job in `rollback.yml` (both declare `environment: staging`) |
+| `production` | Deployment branches: `main` only. Required reviewers: the repo owner. | **Nothing yet.** No workflow job binds `production`: production CD is not implemented, so no approval gate exists today. |
+
+Note: with a single maintainer, leave "Prevent self-review" OFF for `production`, otherwise nobody can approve.
+
+**There are no GitHub secrets in the current design** (the old `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`, `EC2_HOST`, `EC2_USER` and `SSH_SG_ID` names are obsolete).
+Names below were read from `cd.yml` and `rollback.yml` on `main` (`7d88e9b`):
+
+| Scope | Variable | Purpose | Read by |
+|---|---|---|---|
+| Repository | `CD_ENABLED` | Master switch. Unless exactly `true`, CD is skipped and `rollback.yml` refuses. | `cd.yml`, `rollback.yml` |
+| `staging` | `AWS_ROLE_ARN` | GitHub OIDC deploy role to assume (Terraform output `github_deploy_role_arn`) | both |
+| `staging` | `AWS_REGION` | AWS region | both |
+| `staging` | `ECR_REPOSITORY` | Backend image repository name | `cd.yml` |
+| `staging` | `ARTIFACT_BUCKET` | S3 bucket for release bundles | both |
+| `staging` | `MIGRATOR_PROJECT` | CodeBuild migrator project name | `cd.yml` |
+| `staging` | `SSM_DEPLOY_DOCUMENT` | Systems Manager deploy document name | `cd.yml` |
+| `staging` | `SSM_ROLLBACK_DOCUMENT` | Systems Manager rollback document name | `rollback.yml` |
+| `staging` | `STAGING_INSTANCE_ID` | The application instance targeted by Systems Manager | both |
+
+The values come from Terraform outputs after an approved apply, so these variables cannot be set meaningfully before AWS exists.
+Reference: `docs/AWS_STAGING_INTEGRATION.md` section 4.
 
 ## 5. Branch protection for `main` (Part B)
 Configure after the first CI run exists (Phase 3): GitHub can only select status checks that
