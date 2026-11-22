@@ -7,22 +7,22 @@ Numbering: roadmap phases are called **RP1-RP10** and tasks **T<phase>.<n>**, to
 `PROJECT_STATUS.md` (that table stays authoritative for the status tracker). Priorities: **P0** critical blocker, **P1** core functionality,
 **P2** production readiness, **P3** documentation and final evidence. Complexity: Low / Medium / High (relative to this project).
 
-## Status update 2026-11-22 (read from git and GitHub at `main` = `011752c`)
+## Status update 2026-11-22 (first read at `main` = `011752c`; updated after PRs #31 and #32 to `main` = `18943e5`)
 
 Coarse state per roadmap phase. "Implemented, not executed" means merged code covered by offline or static checks only; nothing below has run on AWS.
 
 | Phase | State on 2026-11-22 |
 |---|---|
 | RP1 decisions and housekeeping | T1.1 to T1.3 done. T1.4 (stale design documents) PARTIAL: this reconciliation covers the status documents; `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/OIDC_DESIGN.md` and `docs/GITHUB_SETUP.md` still describe the earlier SSH design (docs/AWS_STAGING_INTEGRATION.md section 16). D1 and D2 wait for the instructor; D5, D6 and D8 are open |
-| RP2 README and CI completion | README merged (PR #10); Dependabot configured (PR #11; PRs #12 and #13 open); branch protection documented (PR #14); test PRs #15 to #19 merged (the owner must still adopt them, B4); B5 demonstrated on PR #28 by API observation, no screenshot of the blocked state; screenshots: 13 Part H images are prepared in a separate evidence PR that is not merged, none for the CI triggers, matrix or job graph |
+| RP2 README and CI completion | README merged (PR #10); Dependabot configured (PR #11; PRs #12 and #13 open); branch protection documented (PR #14); test PRs #15 to #19 merged (the owner must still adopt them, B4); B5 demonstrated on PR #28 by API observation, no screenshot of the blocked state; screenshots: the 13 Part H images are on `main` (PR #32), two partial; none for the CI triggers, matrix or job graph |
 | RP3 application and database | Implemented, not executed against RDS (PR #23): RDS connection, TLS, secret retrieval, bootstrap, advisory lock, connectivity check. Not re-graded task by task |
 | RP4 Terraform | Extended (PR #25: OIDC, CodeBuild, SSM documents, gated by `enable_cicd`). Not done: remote state (still local, unlocked), HTTPS (a recorded decision: HTTP only), a fresh plan, the apply. A local plan from 2026-11-21 (54 resources) is stale and must not be applied. AWS gates 1 and 2 are NOT passed |
 | RP5 deployment code | Implemented, not executed (PRs #24 and #26): digest-based blue/green, S3 bundle, Systems Manager wrapper, rewritten `cd.yml` and `rollback.yml`; staging only, the production rolling deploy is not implemented |
 | RP6 staging deployment | Not started: no Environment, variable or secret, no operator bootstrap, no deployment, no live URL |
 | RP7 production gate and deployment | Not started. `cd.yml` has no production job and binds no `production` Environment, so no approval can be shown yet |
 | RP8 zero-downtime and rollback on AWS | Not started on AWS; local and offline evidence only |
-| RP9 Copilot and failures | Three deliberate failures run and recovered (runs 44884178546 / 44884710861, 44884809417 / 44885032635, 44920064307 / 44920708004; PR #28 stays open); write-ups on `main` (PR #29). Copilot troubleshooting evidence UNAVAILABLE |
-| RP10 final documentation | README merged; screenshots, final all-history gitleaks scan and the clean-clone dry run pending |
+| RP9 Copilot and failures | Three deliberate failures run and recovered (runs 44884178546 / 44884710861, 44884809417 / 44885032635, 44920064307 / 44920708004; PR #28 stays open); write-ups on `main` (PR #29); the 13 screenshots are on `main` (PR #32). Copilot troubleshooting evidence UNAVAILABLE |
+| RP10 final documentation | README merged; the 13 Part H screenshots are on `main`; other screenshots, the final all-history gitleaks scan and the clean-clone dry run pending |
 
 ## 1. Review of the audit (what was checked, what was wrong or missing)
 
@@ -267,7 +267,7 @@ currently unproven. These bands are judgement, not measurements.
 
 ## 9. Exact next task
 
-Update 2026-11-22: T1.1 to T1.3 and T2.1 are done. The next steps are to merge the evidence pull request and this documentation reconciliation, then follow docs/SUBMISSION_READINESS.md section 7. The text below is the 2026-11-21 plan, kept for history.
+Update 2026-11-22: T1.1 to T1.3 and T2.1 are done. PRs #31 (status reconciliation) and #32 (Part H screenshots) are merged; follow docs/SUBMISSION_READINESS.md section 7 for the remaining steps. The text below is the 2026-11-21 plan, kept for history.
 
 **T1.1 then T2.1.** Concretely, after your answers to D1-D8 (at minimum "waiting on the instructor" for D1/D2) and your approval to commit the audit and roadmap
 (T1.3) and merge PR #9 (T1.2), implement **T2.1: create `README.md`** on a new `docs/` branch. It needs no AWS, carries the largest unproven mark total per hour

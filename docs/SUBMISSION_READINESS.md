@@ -1,18 +1,18 @@
 # Submission readiness (2026-11-22, reconciled)
 
-Reconciled against GitHub at `main` = `011752c9b5a1fa5348f89446d4bf237448a548cd` (the merge of PR #30, read with `git fetch` and `gh` on 2026-11-22). **Actual evidence** (something ran and its output was seen) is kept apart from **documented or planned**
+Reconciled against GitHub at `main` = `18943e5271f9ba62c2388616327cf28287168680` (the merge of PR #32, read with `git fetch` and `gh` on 2026-11-22; first written at `011752c` and updated after PRs #31 and #32). **Actual evidence** (something ran and its output was seen) is kept apart from **documented or planned**
 functionality. Mark estimates are judgement, not grading. Nothing here claims an AWS deployment, a zero-downtime result on AWS, or any screenshot that is not on `main`. The first version of this file was written on 2026-11-21 at `8feb5a0`; sections 1, 4, 5, 6 and 7 below replace it, and sections 2 and 3 are unchanged from that version.
 
 Status labels used below: **IV** = implemented and verified; **IE** = implemented but evidence incomplete; **NI** = not implemented.
 
 ## 1. Verified state (read from git and the GitHub API on 2026-11-22)
-- `origin/main` = `011752c` (PR #30 merge). Merged PRs: #1 to #11, #14 to #27, #29 and #30. Merge commits for #22 to #30: #22 `bd1fe99`, #23 `2664382`, #24 `33f1a32`, #25 `d49d5fb`, #26 `e6e93a0`, #27 `4daa00e`, #29 `d6532bd`, #30 `011752c`. Open: Dependabot PRs #12 and #13, and **PR #28**, a deliberate failing-test demonstration for Part H (head `5472d40`, state BEHIND, no comments or reviews), which **must stay open and must not be merged**.
-- Latest runs on `main`: CI success at `011752c`. CD has only ever been `skipped` (24 runs; `CD_ENABLED` unset); `rollback.yml` has never run.
+- `origin/main` = `18943e5` (PR #32 merge). Merged PRs: #1 to #11, #14 to #27 and #29 to #32 (all except #28). PR #31 (`c6a1437`, the status documents) and PR #32 (`18943e5`, the Part H screenshots) merged on 2026-11-22. Merge commits for #22 to #30: #22 `bd1fe99`, #23 `2664382`, #24 `33f1a32`, #25 `d49d5fb`, #26 `e6e93a0`, #27 `4daa00e`, #29 `d6532bd`, #30 `011752c`. Open: Dependabot PRs #12 and #13, and **PR #28**, a deliberate failing-test demonstration for Part H (head `5472d40`, state BEHIND, no comments or reviews), which **must stay open and must not be merged**.
+- Latest runs on `main` (read with `gh` on 2026-11-22): CI succeeded at `18943e5` (run 44986851698, the push after the PR #32 merge), at `c6a1437` (44986162185) and at `011752c` (44929895488); all five required checks also passed on the heads of PRs #31 and #32. CD has only ever been `skipped` (26 runs as of 2026-11-22, including the one at `18943e5`; `CD_ENABLED` unset); `rollback.yml` has never run.
 - **Five failed runs exist**, none may be deleted:
   - Deliberate, Part H: 44884178546 (YAML, recovered by 44884710861, fix `d2b645c`); 44884809417 (deployment health check, `workflow_dispatch`, recovered by 44885032635, no fix commit); 44920064307 (failing test on PR #28, recovered by 44920708004, fix `5472d40`).
   - Accidental, NOT Part H: 44864872114 (CI on PR #11, the "Deploy scripts and Compose" guard step) and 44916673865 (CI on PR #26: the offline CI-helper tests reported 141 passed and 1 failed, "the guard is executable in the bundle"; fixed by `3fe0ca0`, green run 44917232302).
 - Copilot: `docs/copilot/` and `pipeline-demo.yml` are on `main` (PRs #20, #21); the prompts and the Copilot origin are the owner's statements, not independently verified. **Copilot troubleshooting prompts and answers are UNAVAILABLE** and are not reconstructed.
-- Screenshots: **13 Part H screenshots are prepared in a separate evidence pull request that is not merged**, so none is on `main`. Two are partial (failure 2's failing step is not expanded; the branch protection page shows only its top). No screenshot shows a blocked merge, a run ID or Copilot.
+- Screenshots: **the 13 Part H screenshots are on `main`** (PR #32, `docs/screenshots/part-h/`, mapped to runs in `docs/failures/PART_H_FAILURES.md`, linked from the README). Two are partial (failure 2's failing step is not expanded; the branch protection page shows only its top). No screenshot shows a blocked merge, a run ID or Copilot.
 - `docs/failures/PART_H_FAILURES.md` (all three failures, PR #29) is on `main`.
 - GitHub settings: 0 Environments, 0 Actions secrets, 0 Actions variables; five required checks (Frontend and Backend on Node 22 and 24, Backend Docker image), strict, enforced for administrators.
 - AWS: no resource is known to exist. A local `terraform plan` was produced on 2026-11-21 (54 resources); it is stale, was never applied and must not be reused. No live URL exists and none may be written into the repository until the instructor answers D2.
@@ -65,8 +65,8 @@ Labels: IV = implemented and verified; IE = implemented but evidence incomplete;
 | G | 15 | health check, automatic rollback, manual rollback, logs | IE, **local/offline only**: scripts and local rehearsals; `rollback.yml` and CD never ran; no live automatic rollback | **3-6** |
 | H | 10 | Copilot workflow and prompts | IE: documentation on `main` (PRs #20, #21); the Copilot origin and the prompts rest on the owner's statements; Copilot troubleshooting evidence UNAVAILABLE | |
 | H | | three different deliberate failures | IV for the runs: 3 of 3 done, each with a kept failed run and a recovery run (YAML 44884178546 / 44884710861; deployment 44884809417 / 44885032635; test 44920064307 / 44920708004, PR #28 left open) | |
-| H | | per failure: screenshot, root cause with Copilot troubleshooting, fix link | IE: root causes written (PR #29); fix commits `d2b645c` and `5472d40` (failure 2 has none); 13 screenshots in an unmerged evidence PR, two partial; **Copilot troubleshooting UNAVAILABLE** | **6-8** |
-| I | 5 | README, structure, commits, PR workflow | IE (documentation implemented; screenshots pending; live URL pending the instructor's decision) | 3-4 |
+| H | | per failure: screenshot, root cause with Copilot troubleshooting, fix link | IE: root causes written (PR #29); fix commits `d2b645c` and `5472d40` (failure 2 has none); 13 screenshots on `main` (PR #32), two partial; **Copilot troubleshooting UNAVAILABLE** | **6-8** |
+| I | 5 | README, structure, commits, PR workflow | IE (documentation implemented; only the 13 Part H screenshots exist, on `main`; live URL pending the instructor's decision) | 3-4 |
 | | 100 | **Total (judgement, 2026-11-22)** | The 2026-11-21 estimate was about 34-51 (near 42). E, F and G are not awarded on the existence of code | **about 37-55, central estimate near 45** |
 
 ## 5. AWS deployment readiness (no AWS action was taken; reviewed 2026-11-22)
@@ -88,9 +88,9 @@ Effort to a first verified staging release: roughly 8 to 16 working hours includ
 | Item | Actual evidence | Gap |
 |---|---|---|
 | README architecture and setup | on `main` (PR #10, later PRs #27 and #30) | owner read-through; GitHub Mermaid rendering unverified; clean-clone dry run not done |
-| CI success | many green runs, latest CI on `main` at `011752c` | screenshots |
+| CI success | many green runs, CI succeeded on `main` at `18943e5` (run 44986851698) and on the heads of PRs #31 and #32 | screenshots for the CI triggers, matrix and job graph do not exist |
 | Accidental CI failures | runs 44864872114 and 44916673865 | not Part H failures; keep, do not delete |
-| Deliberate failure 1, YAML | failed 44884178546, recovered 44884710861, fix `d2b645c` | screenshots are in the unmerged evidence PR |
+| Deliberate failure 1, YAML | failed 44884178546, recovered 44884710861, fix `d2b645c` | screenshots on `main` (PR #32) |
 | Deliberate failure 2, deployment check | failed 44884809417, recovered 44885032635 | no fix commit (recovery was a new dispatch); the dispatch input is the owner's statement; failing step screenshot not expanded |
 | Deliberate failure 3, failing test | failed 44920064307 (PR #28), recovered 44920708004, fix `5472d40` | PR #28 stays open and unmerged |
 | Copilot evidence | `docs/copilot/` on `main`; failure write-ups (PR #29) | troubleshooting prompts and answers UNAVAILABLE; the owner confirms the record is their own |
@@ -101,12 +101,12 @@ Effort to a first verified staging release: roughly 8 to 16 working hours includ
 | GitHub Environments, secrets, variables | **none** (0 / 0 / 0) | no production approval gate |
 | Deployment evidence | **none** | not done |
 | Rollback evidence | **local and offline only** | `rollback.yml` never ran |
-| Screenshots | 13 prepared, NOT merged (separate evidence PR) | none on `main`; none for CI triggers, matrix or CD |
+| Screenshots | 13 Part H screenshots on `main` (PR #32), two partial | none for CI triggers, matrix, job graph or CD; no blocked merge; failure 2's failing step not expanded; branch protection page only the top |
 | Live URL | none | not deployed; instructor decision pending |
 | Known limitations | README, status and checklist | keep honest |
 
 ## 7. Shortest path to submission (no AWS)
-1. Merge the evidence PR (13 screenshots, README and Part H document changes) and this documentation reconciliation, each after a gitleaks scan and with your approval.
+1. Done on 2026-11-22: PR #31 (status reconciliation) and PR #32 (13 screenshots, README and Part H document changes) are merged. A follow-up documentation PR records this.
 2. Capture the missing screenshots: the expanded "Check health endpoint" step of run 44884809417, the PR #28 Commits tab (red mark on `a3282f4`, green on `5472d40`), the lower half of the branch protection page, the Actions list filtered to failed runs, and the CI matrix and job graph.
 3. Decide how to present the unavailable Copilot troubleshooting evidence; add the owner's own Copilot history only if it exists.
 4. Adopt, rewrite or disclose the B4 tests.
