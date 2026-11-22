@@ -1,9 +1,10 @@
 # Part H: three deliberate pipeline failures, root causes and recoveries
 
 > **Work in progress: evidence is incomplete.** Every fact below comes from the Git history or the GitHub Actions logs and was read
-> on 2026-11-21, or is the project owner's statement and is labelled as such. Items the owner can still supply (the screenshots) are marked **PENDING YOUR INPUT**.
+> on 2026-11-21, or is the project owner's statement and is labelled as such. Items the owner can still supply are marked **PENDING YOUR INPUT** or **MISSING** (screenshots not yet captured).
 > Items that cannot be recovered are marked **Not recalled / Evidence unavailable**: the owner could not recall them on 2026-11-21 and no record of them exists in Git, GitHub or the repository.
-> Nothing is reconstructed: no Copilot prompt, answer or troubleshooting step is invented. Screenshots are listed as to-do items: none exists yet.
+> Nothing is reconstructed: no Copilot prompt, answer or troubleshooting step is invented. Thirteen screenshots are in `docs/screenshots/part-h/` and are mapped to the runs in the
+> [screenshot evidence map](#screenshot-evidence-map); several are **partial** evidence and are labelled as such there.
 
 Repository: https://github.com/Bhabotos/shopnest-devops-cicd
 
@@ -38,17 +39,23 @@ pipeline-demo.yml"), on branch `demo/yaml-syntax-error`, one line in `.github/wo
 `Co-Authored-By: Claude Sonnet 5.5` trailer in Git, which means they were created with Claude Code's assistance.
 
 **Observed error.** Run 44884178546 (event `push`, branch `demo/yaml-syntax-error`, commit `7c526dc`) finished as `failure` with **0 jobs**. The GitHub CLI
-(`gh run view`) reports for this run: *"This run likely failed because of a workflow file issue."* The text that GitHub's web page shows for this run, including the line number of
-the YAML error, was not read and is **PENDING YOUR INPUT** (screenshot).
+(`gh run view`) reports for this run: *"This run likely failed because of a workflow file issue."* GitHub's web page for this run (screenshot
+[`YAML Syntax Failure.png`](../screenshots/part-h/YAML%20Syntax%20Failure.png): run #2, commit `7c526dc`, branch `demo/yaml-syntax-error`, status Failure) shows one annotation, visible in the image as:
+
+> **Invalid workflow file: .github/workflows/pipeline-demo.yml#L20**
+> **You have an error in your yaml syntax on line 20**
+
+That is GitHub's own error text with the line number (line 20), and it agrees with the commit message, which put the break at line 19 and the parser error at line 20. The screenshot does not show the run ID; the run is
+identified by its run number, commit and branch, which match run 44884178546 in the GitHub API.
 
 **Run-name evidence (read from the GitHub API on 2026-11-21).** The failed run 44884178546 is named `.github/workflows/pipeline-demo.yml`, the **file path**, instead of
 the workflow's `name:` value. The recovered run 44884710861, on the fixed commit `d2b645c`, is named `pipeline-demo`. A run named with the file path is consistent with GitHub being unable to
-read the workflow file, which matches the syntax error. This is an observation from the API: it does not give the error message or the line number, which stay pending above.
+read the workflow file, which matches the syntax error. This is an observation from the API: it does not give the error message or the line number, which come from the screenshot above.
 
 **Recorded in Git at the time** (details taken from the commit messages of `7c526dc` and `d2b645c`; the messages were written with Claude Code's assistance). They state that: the colon was removed at
 **line 19**; the parser fails at **line 20**; locally, PyYAML and actionlint both rejected the file with *"mapping values are not allowed here"* at line 20 (actionlint also reported *"could not parse as YAML"*);
 the missing colon turns line 19 into the start of a multi-line plain scalar; run 44884178546 failed immediately with 0 jobs and *"This run likely failed because of a workflow file issue."*; and after the fix PyYAML parses the file and
-actionlint reports no findings. These are the **local tools' messages** as recorded in the commit messages. They are **not** the text of GitHub's web page, which is still pending above.
+actionlint reports no findings. These are the **local tools' messages** as recorded in the commit messages. They are **not** the text of GitHub's web page, which is quoted from the screenshot above.
 
 **Root cause.** `runs-on ubuntu-latest` has no `:`, so it is not a `key: value` pair inside the job's mapping. The YAML parser rejects the file, GitHub
 marks the workflow invalid, and no job starts. The mistake is in the file's syntax, not in the application or the runner.
@@ -90,6 +97,12 @@ HEALTH_CHECK_URL: https://shopnest-demo-target.invalid/health
 Health check request failed.
 ##[error]Process completed with exit code 1.
 ```
+
+**Screenshot evidence for this failure (partial).**
+[`Health Check failure.png`](../screenshots/part-h/Health%20Check%20failure.png) shows run #4 (manually triggered, commit `8feb5a0`, branch `demo/baseline`, status Failure): `backend-tests` passed and `deploy-check` failed.
+It does **not** show the expanded *Check health endpoint* step, so the screenshot does **not** prove the `.invalid` URL or the exact error message quoted above; those come from the run log read through the GitHub API.
+**MISSING:** a screenshot of the expanded *Check health endpoint* step. [`Health Check Recovery.png`](../screenshots/part-h/Health%20Check%20Recovery.png) shows run #5 (manually triggered, commit `8feb5a0`,
+Success, both jobs green). Neither screenshot shows the workflow inputs, so how the recovery run was started and which value it received stay **unverified**.
 
 **Verified from the GitHub API and the run logs (2026-11-21).**
 - The same commit `8feb5a0` had passed before: run [44881750147](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44881750147) (push to `demo/baseline`, 07:45:56 UTC, `success`).
@@ -140,7 +153,13 @@ deliberately for this assignment. The commit and the pull request were created w
 - **Backend Docker image** was skipped (it needs the Backend job). Frontend (Node 22 and 24) and Deploy scripts and Compose passed.
 - Log: `FAIL test/config.test.js > loadConfig > falls back to the default for a non-numeric port`, `AssertionError: expected 3000 to be 3001 // Object.is equality`
   (Expected 3001, Received 3000), `Test Files 1 failed | 12 passed (13)`, `Tests 1 failed | 170 passed (171)`.
-- The PR's merge state was **BLOCKED**.
+- The PR's merge state was **BLOCKED**. This was observed through the GitHub API while the checks were failing. **No screenshot of the blocked merge exists**: the checks are green now, so that view can no longer be captured as it was.
+
+**Screenshot evidence for this failure.**
+[`Failed backend test.png`](../screenshots/part-h/Failed%20backend%20test.png) shows CI run #56 on PR #28 (Failure; Backend Node 22 and 24 red, Frontend and Deploy scripts and Compose green, Backend Docker image skipped).
+[`Backend Failed run.png`](../screenshots/part-h/Backend%20Failed%20run.png) shows the Backend (Node 22) log with `AssertionError: expected 3000 to be 3001`, Expected 3001 and Received 3000, and the config test reported as 1 failed.
+[`Fix commit.png`](../screenshots/part-h/Fix%20commit.png) shows commit `5472d40` restoring `toBe(3001)` to `toBe(3000)` at line 34. [`recovery plan.png`](../screenshots/part-h/recovery%20plan.png) shows the recovered CI run #57 (all six jobs green), and
+[`PR28 open test.png`](../screenshots/part-h/PR28%20open%20test.png) shows PR #28 as Open and titled "DO NOT MERGE". **PR #28 is OPEN, UNMERGED and must not be merged.**
 
 **Root cause.** The test's expectation was wrong. `loadConfig` in `backend/src/config.js` correctly falls back to 3000 (`intFrom(env.PORT, 3000)`), and the first test in the same file also expects 3000.
 The code was right and the test was wrong.
@@ -176,6 +195,10 @@ The `main` branch is protected (read-back: `docs/evidence/BRANCH_PROTECTION_READ
 On PR #28, both Backend checks failed and the Docker-image check was skipped, so the required checks were not satisfied. GitHub reported the merge state as **BLOCKED**, and the change could not be merged.
 After the fix commit, all required checks passed and the state became **CLEAN**. The failing change was stopped by CI before it could reach `main`.
 
+Screenshots: the failing checks are in `Failed backend test.png` and `Backend Failed run.png`. The branch protection screenshots are **partial**: `Branch Protection.png` shows that "Require a pull request before merging" and
+"Require status checks to pass before merging" are enabled for `main`, but not the names of the required checks, "Require branches to be up to date", administrator enforcement or the force-push setting, which rest on the
+read-back document above. There is **no screenshot of the blocked merge**.
+
 ---
 
 ## Existing Copilot evidence (not troubleshooting)
@@ -188,7 +211,34 @@ prompts and answers, which are therefore marked **Not recalled / Evidence unavai
 **Local check on the owner's machine (cannot be verified from the repository).** VS Code's chat index for this repository's workspace lists three chat sessions on 2026-11-21, all before the first failure commit
 (`7c526dc`, 13:48:27 +06:00): two empty sessions titled "New Chat" (created 12:38 and 13:03, UTC+06:00) and one titled "GitHub Actions workflow for pipeline-demo.yml" (created 13:03, last request 13:21, UTC+06:00).
 No session dated after the first failure commit is listed. Only titles and times were read; no session content was opened. This does not rule out Copilot use elsewhere (for example on github.com or in another
-VS Code window), which is why the owner's statement is kept and labelled as unverified.
+VS Code window), which is why the owner's statement is kept and labelled as unverified. None of the 13 screenshots shows GitHub Copilot.
+
+---
+
+## Screenshot evidence map
+
+Thirteen screenshots are in [`docs/screenshots/part-h/`](../screenshots/part-h/), stored under the filenames the owner supplied (two of them, `CI Configure.png` and `recovery plan.png`, do not describe what they show, and `Sucessfully recovery.png`
+is spelled as supplied). **No screenshot displays a run ID or URL.** Each is tied to a run by its run number, commit and branch, which were checked against the GitHub API on 2026-11-21: run #2 is 44884178546, #3 is 44884710861,
+#4 is 44884809417, #5 is 44885032635, and the CI runs #56 and #57 are 44920064307 and 44920708004.
+
+| # | File | Failure | Run / commit | What it shows | Evidence level |
+|---|---|---|---|---|---|
+| 1 | [`YAML Syntax Failure.png`](../screenshots/part-h/YAML%20Syntax%20Failure.png) | 1 | run 44884178546 (#2), `7c526dc` | Failure with the annotation *Invalid workflow file: .github/workflows/pipeline-demo.yml#L20 / You have an error in your yaml syntax on line 20* | Sufficient |
+| 2 | [`Sucessfully recovery.png`](../screenshots/part-h/Sucessfully%20recovery.png) | 1 | run 44884710861 (#3), `d2b645c` | Success; `backend-tests` and `deploy-check` green. It shows the run, not the fix diff | Sufficient for the recovery run |
+| 3 | [`Health Check failure.png`](../screenshots/part-h/Health%20Check%20failure.png) | 2 | run 44884809417 (#4), `8feb5a0` | Manually triggered; `backend-tests` green, `deploy-check` red. **No expanded step, so no URL or error message** | **Partial** |
+| 4 | [`Health Check Recovery.png`](../screenshots/part-h/Health%20Check%20Recovery.png) | 2 | run 44885032635 (#5), `8feb5a0` | Manually triggered; Success, both jobs green. It shows no inputs | Sufficient for the run state only |
+| 5 | [`Failed backend test.png`](../screenshots/part-h/Failed%20backend%20test.png) | 3 | CI run 44920064307 (#56), PR #28 | Failure; Backend 22 and 24 red; Docker image skipped; Frontend and Deploy scripts green | Sufficient |
+| 6 | [`Backend Failed run.png`](../screenshots/part-h/Backend%20Failed%20run.png) | 3 | run 44920064307, Backend (Node 22) | Test step log: `AssertionError: expected 3000 to be 3001`, Expected 3001, Received 3000 | Sufficient |
+| 7 | [`Fix commit.png`](../screenshots/part-h/Fix%20commit.png) | 3 | commit `5472d40`, parent `a3282f4` | Diff `toBe(3001)` to `toBe(3000)`, 1 file, +1 −1 | Sufficient |
+| 8 | [`recovery plan.png`](../screenshots/part-h/recovery%20plan.png) | 3 | CI run 44920708004 (#57), PR #28 | Success; all six jobs green. It is the recovered run, not a plan | Sufficient |
+| 9 | [`PR28 open test.png`](../screenshots/part-h/PR28%20open%20test.png) | 3 | PR #28 | Open, "DO NOT MERGE" title and body, 2 commits. **It does not show a blocked merge** | Sufficient for "open and DO NOT MERGE" |
+| 10 | [`Branch Protection.png`](../screenshots/part-h/Branch%20Protection.png) | B, D | rule for `main` | "Require a pull request before merging" and "Require status checks to pass before merging" are checked. **Not visible:** check names, up to date, admin enforcement, force pushes | **Partial** |
+| 11 | [`CI Configure.png`](../screenshots/part-h/CI%20Configure.png) | B, D | rule for `main` | The branch protection rules list: one rule for `main`, applying to 1 branch. It shows no rule settings | **Partial** (adds little) |
+| 12 | [`Github actions.png`](../screenshots/part-h/Github%20actions.png) | all | Actions list | 108 runs; recent CI success on `main` (`011752c`) and CD runs; workflows listed. **No failed run is visible in this view** | **Partial** |
+| 13 | [`Readme.png`](../screenshots/part-h/Readme.png) | I | README on `main` | The top of the README with its "Honest status" banner and contents. The Part H section is not in view | **Partial** |
+
+**Still missing:** the expanded *Check health endpoint* step of run 44884809417 (failure 2); a screenshot of the blocked merge on PR #28 (it can no longer be reproduced as it was; PR #28's Commits tab, showing a red mark on `a3282f4` and a
+green one on `5472d40`, would show the failed and recovered states); the lower half of the branch protection page (required check names, up to date, administrator enforcement, force pushes); and the Actions list filtered to failed runs.
 
 ---
 
@@ -196,13 +246,16 @@ VS Code window), which is why the owner's statement is kept and labelled as unve
 
 | # | Gap | Who | Needed for |
 |---|---|---|---|
-| G1 | Screenshots: failed run 44884178546 with the workflow-file error and its line number | project owner | failure 1 |
-| G2 | Screenshots: failed run 44884809417 (the failed step and `HEALTH_CHECK_URL` line) and recovered run 44885032635 | project owner | failure 2 |
-| G3 | Screenshots: failed run 44920064307, the expanded Test step, PR #28 blocked, then green; recovered run 44920708004 | project owner | failure 3 |
+| G1 | **Resolved:** the failed run's page and its annotation are in `YAML Syntax Failure.png` (the exact text is quoted in failure 1) | none | failure 1 |
+| G2 | **Partly resolved:** run summaries exist for the failed and recovered runs. **MISSING:** a screenshot of the expanded *Check health endpoint* step (`HEALTH_CHECK_URL` line and the error message) | project owner | failure 2 |
+| G3 | **Partly resolved:** the failed run, the Test log, the fix commit, the recovered run and PR #28 as open are captured. **MISSING:** a screenshot of the blocked merge | project owner | failure 3 |
 | G4 | **Not recalled / Evidence unavailable:** the Copilot troubleshooting conversation(s): which failure(s) each covered, and the exact prompt, answer and changes (not assumed to be the same across failures). The owner states Copilot was used | none can be recovered | all three |
 | G5 | **Partly recovered:** failure 1's steps are recorded in its commit messages. Failure 2's steps are **Not recalled / Evidence unavailable** | none can be recovered | failures 1, 2 |
 | G6 | Failure 2 has **no fix commit** to link (the fix was a corrected input). Decide how to document it; do not invent a commit | project owner | failure 2 |
 | G7 | **Resolved (owner's statement):** the owner started the failure 2 run from the GitHub Actions UI and entered the `.invalid` URL; the run log shows the same value | none | failure 2 |
 | G8 | **Resolved:** Git commit times are UTC+06:00 and run times are UTC (see "Timestamps" above) | none | all |
+| G9 | **Partial evidence:** the branch protection screenshots do not show the required check names, "up to date", administrator enforcement or the force-push setting. **MISSING:** the lower half of the settings page | project owner | Parts B, D |
+| G10 | **Partial evidence:** the Actions list screenshot shows no failed run. **MISSING:** the list filtered to failed runs | project owner | all failures |
+| G11 | No screenshot displays a run ID or URL; runs are identified by run number, commit and branch (see the evidence map). Including the browser address bar in future screenshots would show the ID | project owner | all |
 
-**Where the missing material goes:** screenshots under `docs/screenshots/part-h/`, referenced from this file. A link from the README's Evidence section is not added yet.
+**Where the evidence is:** the 13 screenshots are in `docs/screenshots/part-h/` and are mapped to the runs in the [screenshot evidence map](#screenshot-evidence-map). The README links this file and the folder.
