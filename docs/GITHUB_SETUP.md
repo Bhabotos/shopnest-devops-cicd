@@ -58,7 +58,7 @@ Names below were read from `cd.yml` and `rollback.yml` on `main` (`7d88e9b`):
 | Repository | `CD_ENABLED` | Master switch. Unless exactly `true`, CD is skipped and `rollback.yml` refuses. | `cd.yml`, `rollback.yml` |
 | `staging` | `AWS_ROLE_ARN` | GitHub OIDC deploy role to assume (Terraform output `github_deploy_role_arn`) | both |
 | `staging` | `AWS_REGION` | AWS region | both |
-| `staging` | `ECR_REPOSITORY` | Backend image repository name | `cd.yml` |
+| `staging` | `ECR_REPOSITORY` | Backend image repository **name** (for example `shopnest/staging/backend`), not the URL from `ecr_repository_urls` | `cd.yml` |
 | `staging` | `ARTIFACT_BUCKET` | S3 bucket for release bundles | both |
 | `staging` | `MIGRATOR_PROJECT` | CodeBuild migrator project name | `cd.yml` |
 | `staging` | `SSM_DEPLOY_DOCUMENT` | Systems Manager deploy document name | `cd.yml` |

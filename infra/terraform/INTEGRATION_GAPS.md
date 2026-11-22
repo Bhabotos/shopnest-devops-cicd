@@ -5,7 +5,10 @@ Scope: **future changes only.** Nothing in `deploy/`, `.github/workflows/`, `bac
 deployment does **not** automatically support any of this. Verified by reading the files on `main` (commit `9277270`).
 **Must** = deployment cannot work without it. **Should** = works but unsafe or unmaintainable without it.
 
-## 1. SSM instead of SSH (Must)
+> **HISTORICAL (UPDATE 2026-11-22).** This report is a 2026-11 snapshot of what had to change. Its section 1 (SSM instead of SSH) and section 8 (rollback) were implemented in code and merged: the workflows and deploy code in PRs #22 to #27 (`cd.yml` and `rollback.yml` in PR #26), and the documents named in section 9 (`CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/GITHUB_SETUP.md`; `docs/OIDC_DESIGN.md` marked superseded) in PR #34.
+> "Resolved" here means **written, merged and tested offline only**: nothing was run on AWS. The SSH versus SSM question for the assignment wording remains **pending the instructor**. Tables below describe the state before those changes.
+
+## 1. SSM instead of SSH (Must) [RESOLVED IN CODE, PRs #22 to #27; never run on AWS; instructor question on the wording pending]
 | Where | Today | Required change |
 |---|---|---|
 | `.github/workflows/cd.yml` (both deploy jobs) and `rollback.yml` | OIDC role, then a port-22 security-group rule for the runner, `ssh`/`scp` with `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`, `EC2_HOST`, `EC2_USER`, then revoke | Delete the "Open SSH", "Prepare SSH" and "Close SSH" steps and those secrets. Use `aws ssm send-command` against the instance IDs from `terraform output instance_ids`, wait for completion, and map the command's `ResponseCode` to the existing exit codes (0 ok, 1 failed with previous release serving, 3 failed and recovery failed) |

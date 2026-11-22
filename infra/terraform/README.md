@@ -221,7 +221,7 @@ Also: no public address on any instance or on RDS; EBS and RDS encrypted; IMDSv2
 ## 7. Systems Manager: access and minimum permissions
 SSM is the only administrative access: no key pair, no sshd configuration, no inbound port.
 - **Instance role (created here):** `AmazonSSMManagedInstanceCore`. The SSM agent is preinstalled on the Ubuntu AMI and registers over outbound HTTPS.
-- **Deploy role (NOT created; needs the OIDC `sub` claim, `docs/OIDC_DESIGN.md` item 2a). Minimum permissions it will need:**
+- **Deploy role (DEFINED in `github_oidc.tf`, created only when `enable_cicd` is true; NOT created in AWS: nothing has been planned or applied).** It needs the real OIDC `sub` claim of the `deploy-staging` job, captured from a workflow run and not guessed (`docs/AWS_STAGING_INTEGRATION.md` section 3.3; the older `docs/OIDC_DESIGN.md` is a superseded SSH-era design and its port-22 steps do not apply). Whether AWS accepts the policy is unverified. Intended permissions (see `github_oidc.tf` for the authoritative list):
   - `ssm:SendCommand` on the specific instance ARNs and on one SSM document (not `AWS-RunShellScript` open to anything), with a tag or ID condition;
   - `ssm:GetCommandInvocation` and `ssm:ListCommandInvocations` to read the result;
   - `ssm:DescribeInstanceInformation` to check the instances are online;

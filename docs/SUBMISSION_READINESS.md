@@ -1,5 +1,7 @@
 # Submission readiness (2026-11-22, reconciled)
 
+> **UPDATE 2026-11-22 (later):** `main` is now `fc67aac` (PR #34 merged: the architecture, setup and Claude rules documents now describe the SSM design). This file's evidence picture is unchanged: no AWS resource, no deployment, no live URL, and no new graded evidence. The SSH versus SSM question for Part E is pending the instructor.
+
 Reconciled against GitHub at `main` = `18943e5271f9ba62c2388616327cf28287168680` (the merge of PR #32, read with `git fetch` and `gh` on 2026-11-22; first written at `011752c` and updated after PRs #31 and #32). **Actual evidence** (something ran and its output was seen) is kept apart from **documented or planned**
 functionality. Mark estimates are judgement, not grading. Nothing here claims an AWS deployment, a zero-downtime result on AWS, or any screenshot that is not on `main`. The first version of this file was written on 2026-11-21 at `8feb5a0`; sections 1, 4, 5, 6 and 7 below replace it, and sections 2 and 3 are unchanged from that version.
 
@@ -60,7 +62,7 @@ Labels: IV = implemented and verified; IE = implemented but evidence incomplete;
 | C | 10 | separate CI and CD files, jobs, `needs`, matrix, parallel, artifact upload, README diagram | IV for CI; IE for CD (file written, **never ran**; artifact hand-off in CD never executed) | 6-7 |
 | D | 10 | no credentials in repo; separate env config files; README lists names | IV (guard, scans clean; final all-history scan still to do) | |
 | D | | GitHub Environments, production approval gate, secrets in GitHub | NI: **0 Environments, 0 secrets, 0 variables** | **4-5** |
-| E | 15 | AWS EC2 three-tier, deploy over SSH/SSM after CI, private DB | NI: Terraform written and statically validated only; no EC2, no plan or apply, no deployment, no live URL | **0-3** |
+| E | 15 | AWS EC2 three-tier, deploy after CI (assignment wording: "over SSH"; implemented design: SSM, pending instructor confirmation), private DB | NI: Terraform written and statically validated only; no EC2, no plan or apply, no deployment, no live URL | **0-3** |
 | F | 15 | zero downtime with request evidence | IE, **local/offline only**: real-Docker rehearsals (238/238, 107/107, 161/161 in separate steps) and 125 offline checks; a post-switch fault cost 79 of 171 requests; nothing on AWS | **0-4** |
 | G | 15 | health check, automatic rollback, manual rollback, logs | IE, **local/offline only**: scripts and local rehearsals; `rollback.yml` and CD never ran; no live automatic rollback | **3-6** |
 | H | 10 | Copilot workflow and prompts | IE: documentation on `main` (PRs #20, #21); the Copilot origin and the prompts rest on the owner's statements; Copilot troubleshooting evidence UNAVAILABLE | |

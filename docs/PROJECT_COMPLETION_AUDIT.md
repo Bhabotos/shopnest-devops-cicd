@@ -4,6 +4,8 @@ Audit date: 2026-11-21. Source of requirements: `assignment/GITHUB ACTIONS.docx`
 Method: git, `gh` read-only queries, and reading files. Nothing was run against AWS, Terraform, Docker or a database. No application,
 infrastructure or workflow file was modified. This document is the only file created by the audit.
 
+> **UPDATE 2026-11-22 (this audit is a 2026-11-21 snapshot and is kept as history).** Statements below that call `cd.yml` and `rollback.yml` "SSH-based" or say workflows "still open port 22" are **superseded**: both workflows were rewritten for OIDC, CodeBuild and Systems Manager (no SSH) and merged in PR #26, and `docs/ARCHITECTURE.md`, `docs/GITHUB_SETUP.md` and `CLAUDE.md` were reconciled in PR #34. The workflows have **never run** (CD runs are all `skipped`) and nothing is deployed on AWS. The SSH versus SSM question for the assignment wording stays **pending the instructor**. Current state: `PROJECT_STATUS.md`.
+
 Classes: **DONE** (real evidence exists), **PARTIAL**, **NOT IMPLEMENTED**, **BLOCKED** (cannot proceed without a decision or an earlier item),
 **NEEDS VERIFICATION** (probably true, not re-proved). "Config only" means written, never deployed. A passing static check is not a deployment.
 
@@ -23,7 +25,7 @@ Classes: **DONE** (real evidence exists), **PARTIAL**, **NOT IMPLEMENTED**, **BL
 | Dependabot | not configured (`.github/dependabot.yml` absent) |
 | README.md | **does not exist** |
 | `docs/screenshots/`, `docs/failures/`, `docs/copilot/` | **do not exist** |
-| Workflows | `ci.yml` (201 lines), `cd.yml` (441, disabled draft, SSH-based), `rollback.yml` (222, never run, SSH-based), `terraform-ci.yml` (106) |
+| Workflows | `ci.yml` (201 lines), `cd.yml` (441, disabled draft, SSH-based; SUPERSEDED, rewritten for SSM in PR #26), `rollback.yml` (222, never run, SSH-based; SUPERSEDED, rewritten for SSM in PR #26), `terraform-ci.yml` (106) |
 | AWS | no resource, no authentication, no plan or apply (per status documents; not contradicted by anything found) |
 
 Observation on the instruction "fix the outstanding B5 failing check": no check is failing. B5 is open because nobody has yet shown a pull
@@ -92,18 +94,18 @@ Evidence paths are relative to the repository. "Local" = Docker Desktop on the d
 | D3 | NOT IMPLEMENTED | `config/`/`deploy/env` examples only; no GitHub Environments | `staging` and `production` Environments with separate variables (needs your approval) |
 | D4 | NOT IMPLEMENTED | `cd.yml` references a production environment; none exists | environment with required reviewers (needs your approval) |
 | D5 | NOT IMPLEMENTED | - | README table of every secret and variable by name and purpose |
-| D6 (R) | PARTIAL | design only (`docs/OIDC_DESIGN.md`); instance role in Terraform | OIDC provider and deploy roles; the design still assumes SSH and must be redesigned for SSM/ECR |
+| D6 (R) | PARTIAL | design only (`docs/OIDC_DESIGN.md`); instance role in Terraform | OIDC provider and deploy roles; the design still assumes SSH and must be redesigned for SSM/ECR [UPDATE 2026-11-22: the OIDC provider and deploy role are written in Terraform (`github_oidc.tf`), not created; `docs/OIDC_DESIGN.md` is marked superseded] |
 
 ### Part E - EC2 deployment (15)
 | ID | Class | Current state | Missing |
 |---|---|---|---|
 | E1 | PARTIAL | Terraform merged (PR #8); fmt/validate/secret scan green; **no plan, no apply, no resource** | AWS authentication (your approval), real plan, review, approved apply; closing Critical INT-01, INT-02, RDS-01 and High ALB-01, ST-01, ST-04, INT-03..06 |
-| E2 | BLOCKED | `cd.yml` is SSH-based, disabled | decision 1; rewrite for SSM; infrastructure and OIDC role first |
+| E2 | BLOCKED | `cd.yml` is SSH-based, disabled [UPDATE 2026-11-22: rewritten for SSM and merged (PR #26), never executed; still not deployed] | decision 1; rewrite for SSM; infrastructure and OIDC role first |
 | E3 | NOT IMPLEMENTED | frontend/backend/DB reachable only in local Compose | prod compose for RDS (no `db` service), backend RDS TLS and Secrets Manager retrieval, DB role bootstrap, migrations on RDS |
 | E4 | PARTIAL | RDS `publicly_accessible = false`, DB security group admits the backend group only (read in `rds.tf`, `security.tf`) | an external port 5432 test after deployment |
 | E5 | PARTIAL | `cd.yml` triggers via `workflow_run` on CI success with a gate job; never exercised past the gate | a real run, and a failing-CI case showing no deploy |
 | E6 | PARTIAL | `/version` and image-label verification exist in scripts; CD never ran | SHA visible in image tag, `/version`, deploy log on a real deployment |
-| E7 (R) | PARTIAL | Terraform has no inbound SSH; workflows still open port 22 | superseded by SSM migration (decision 1) |
+| E7 (R) | PARTIAL | Terraform has no inbound SSH; workflows still open port 22 [UPDATE 2026-11-22: the workflows no longer use SSH (PR #26); never executed] | superseded by SSM migration (decision 1) |
 | E8 (R) | PARTIAL | two PostgreSQL roles verified in local Compose (62/62) | bootstrap on RDS (rds_superuser limits unverified) |
 
 ### Part F - zero downtime (15)

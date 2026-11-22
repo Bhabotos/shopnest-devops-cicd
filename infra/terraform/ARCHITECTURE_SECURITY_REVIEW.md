@@ -1,5 +1,7 @@
 # Terraform architecture and security review (Phase 4.1)
 
+> **HISTORICAL (2026-11-22 note).** Written at commit `cbffa6a`. Findings such as INT-01 ("SSH-based workflows cannot reach private instances") describe that commit; the workflows were since rewritten for Systems Manager (PR #26), never run on AWS. The body below is unchanged on purpose.
+
 Read-only review of `infra/terraform/` at commit `cbffa6ac7f53a18bac452a174b18422c0c8f8ecf` on branch `feature/terraform-aws-infra`, with the
 existing CI/CD and deployment code on the same commit. **No AWS access, no `terraform plan` and no change to any existing file was used or made.**
 Nothing below is marked fixed: the repository was not changed. Items that could not be verified without AWS or network access are labelled
