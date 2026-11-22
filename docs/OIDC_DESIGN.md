@@ -1,6 +1,18 @@
-# GitHub OIDC Design for SSH Access Management
+# GitHub OIDC Design (SUPERSEDED SSH access design, kept for its verification log)
 
-Status: DESIGN ONLY. No AWS resource has been created or applied. Terraform will define these in
+> **SUPERSEDED (2026-11-22, `main` at `7d88e9b`).** The design below opens a temporary port-22 rule for one runner and deploys over SSH.
+> **The implementation does not do this.** It has no inbound SSH rule and no SSH key. GitHub OIDC is still used, but only to obtain short-lived
+> credentials for a deploy role that can push the image to ECR, upload the release bundle (PutObject only), start the CodeBuild migrator, and send
+> exactly two Systems Manager documents (deploy, rollback) to exactly one instance. See `infra/terraform/github_oidc.tf`, `.github/workflows/cd.yml`
+> and `rollback.yml`, and `docs/AWS_STAGING_INTEGRATION.md` section 3.3.
+>
+> What still applies from this file: the OIDC trust idea and the verification log rows about OIDC claims. The real `sub` claim must be captured from a
+> workflow run, not guessed (a newer repository may use ID-based claims); the trust policy lists exact subjects with `StringEquals` and the `sts.amazonaws.com` audience.
+> A job bound to a GitHub Environment has a different subject from a branch-only job, so capture it from the real `deploy-staging` job.
+> What does NOT apply: the security-group rules, the sweeper, the `SSH_*` names, the host-key section and the SSH risk table.
+> Whether SSH versus Systems Manager satisfies the assignment wording ("over SSH") is **pending instructor confirmation**.
+
+Status of the original design: DESIGN ONLY. No AWS resource has been created or applied. Terraform will define these in
 Phase 4 and nothing is applied without explicit approval. All identifiers below are placeholders.
 No server IP, DNS name or URL appears in this document.
 
@@ -10,8 +22,8 @@ Convention: every factual claim about AWS or GitHub is marked
 **[Design]** (our proposal, not a platform fact).
 Documentation was read on 2026-11-17. AWS and GitHub change; re-check before Phase 4.
 
-## Goal
-Part E requires deployment over SSH. Port 22 stays closed. A deploy job obtains short-lived AWS
+## Goal (superseded design; see the banner above)
+This design assumed Part E requires deployment over SSH. Port 22 stays closed. A deploy job obtains short-lived AWS
 credentials through GitHub OIDC, opens SSH for exactly one runner address for the duration of
 the run, deploys over SSH, and closes the rule again. No permanent AWS access keys exist anywhere.
 
