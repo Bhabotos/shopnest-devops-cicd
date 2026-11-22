@@ -1,11 +1,28 @@
 # Project execution roadmap
 
-Date: 2026-11-21. Status of this document: PLAN ONLY. Nothing in it has been implemented, approved or run.
+Date: 2026-11-21; status update added 2026-11-22 (see "Status update 2026-11-22" below). The task tables and sections 1 to 9 are the 2026-11-21 plan and are kept as history: where a task status there differs from the update, the update wins. Task rows were NOT individually re-graded on 2026-11-22.
 Inputs: `docs/PROJECT_COMPLETION_AUDIT.md`, `PROJECT_STATUS.md`, `docs/REQUIREMENTS_CHECKLIST.md`, `assignment/GITHUB ACTIONS.docx` (text re-read),
 `CLAUDE.md`, and spot checks of the repository for this review (section 1).
 Numbering: roadmap phases are called **RP1-RP10** and tasks **T<phase>.<n>**, to avoid confusion with the older Phase 0-10 numbering in
 `PROJECT_STATUS.md` (that table stays authoritative for the status tracker). Priorities: **P0** critical blocker, **P1** core functionality,
 **P2** production readiness, **P3** documentation and final evidence. Complexity: Low / Medium / High (relative to this project).
+
+## Status update 2026-11-22 (read from git and GitHub at `main` = `011752c`)
+
+Coarse state per roadmap phase. "Implemented, not executed" means merged code covered by offline or static checks only; nothing below has run on AWS.
+
+| Phase | State on 2026-11-22 |
+|---|---|
+| RP1 decisions and housekeeping | T1.1 to T1.3 done. T1.4 (stale design documents) PARTIAL: this reconciliation covers the status documents; `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/OIDC_DESIGN.md` and `docs/GITHUB_SETUP.md` still describe the earlier SSH design (docs/AWS_STAGING_INTEGRATION.md section 16). D1 and D2 wait for the instructor; D5, D6 and D8 are open |
+| RP2 README and CI completion | README merged (PR #10); Dependabot configured (PR #11; PRs #12 and #13 open); branch protection documented (PR #14); test PRs #15 to #19 merged (the owner must still adopt them, B4); B5 demonstrated on PR #28 by API observation, no screenshot of the blocked state; screenshots: 13 Part H images are prepared in a separate evidence PR that is not merged, none for the CI triggers, matrix or job graph |
+| RP3 application and database | Implemented, not executed against RDS (PR #23): RDS connection, TLS, secret retrieval, bootstrap, advisory lock, connectivity check. Not re-graded task by task |
+| RP4 Terraform | Extended (PR #25: OIDC, CodeBuild, SSM documents, gated by `enable_cicd`). Not done: remote state (still local, unlocked), HTTPS (a recorded decision: HTTP only), a fresh plan, the apply. A local plan from 2026-11-21 (54 resources) is stale and must not be applied. AWS gates 1 and 2 are NOT passed |
+| RP5 deployment code | Implemented, not executed (PRs #24 and #26): digest-based blue/green, S3 bundle, Systems Manager wrapper, rewritten `cd.yml` and `rollback.yml`; staging only, the production rolling deploy is not implemented |
+| RP6 staging deployment | Not started: no Environment, variable or secret, no operator bootstrap, no deployment, no live URL |
+| RP7 production gate and deployment | Not started. `cd.yml` has no production job and binds no `production` Environment, so no approval can be shown yet |
+| RP8 zero-downtime and rollback on AWS | Not started on AWS; local and offline evidence only |
+| RP9 Copilot and failures | Three deliberate failures run and recovered (runs 44884178546 / 44884710861, 44884809417 / 44885032635, 44920064307 / 44920708004; PR #28 stays open); write-ups on `main` (PR #29). Copilot troubleshooting evidence UNAVAILABLE |
+| RP10 final documentation | README merged; screenshots, final all-history gitleaks scan and the clean-clone dry run pending |
 
 ## 1. Review of the audit (what was checked, what was wrong or missing)
 
@@ -77,7 +94,7 @@ the SSM path and the ECR path exist; no production before staging passes; no rol
 |---|---|---|---|---|---|---|---|---|
 | T1.1 | E, S4 | DONE 2026-11-21 (D1 and D2 recorded as waiting for the instructor; D3 and D5 recorded; the instructor question is drafted in `docs/INSTRUCTOR_CLARIFICATION_DRAFT.md` and NOT sent; it is for the user to send) | Obtain answers D1-D8; record in `PROJECT_STATUS.md` decisions log. Draft the instructor question on SSM and live URL (text only) | none | answers recorded with date; instructor reply kept as evidence if received | no server address in the question | D1, D2, D3, D5 answered or marked "waiting" | Low |
 | T1.2 | I4 | DONE 2026-11-21 (PR #9 merged with a normal merge commit 75d1d93; post-merge CI run 44859967355 success) | Merge PR #9 (needs your approval; branch is behind `main`, strict protection may demand an update merge, never a rebase) | approval | PR merged, `main` CI green | none | `main` contains docs commit `3470d36` | Low |
-| T1.3 | I4 | IN PROGRESS: the audit and roadmap were committed through PR #9 (a24e7ca); the README, tracking updates and instructor draft are reviewed locally and wait for the owner's approval to stage and commit (the branch must be created from the current `origin/main`) | Commit the README, the instructor draft and the tracking updates through a new docs branch and PR | T1.2, approval | PR checks green; gitleaks clean | secret scan before commit | both documents on `main` | Low |
+| T1.3 | I4 | COMPLETE 2026-11-21: the audit and roadmap were committed through PR #9 (a24e7ca); the README, tracking updates and instructor draft were merged through PR #10 with a normal merge commit e6ed4571c96b8023d7e58a46770294867cb4844b (all five files present on `main`, all six PR checks passed, post-merge CI run 44862444476 success, source branch preserved) | Commit the README, the instructor draft and the tracking updates through a new docs branch and PR | T1.2, approval | PR checks green; gitleaks clean | secret scan before commit | both documents on `main` | Low |
 | T1.4 | I1, I3 | PARTIAL | Reconcile stale docs: `CLAUDE.md` (layout, DB, SSH rule 12), `docs/ARCHITECTURE.md`, `docs/OIDC_DESIGN.md`, `docs/GITHUB_SETUP.md`, `infra/terraform/REMEDIATION_LOG.md` (Terraform CI line). `CLAUDE.md` changes need your approval because they are project rules | D1 | grep for "SSH", "single instance", "Docker" in docs; consistency read-through | keep rules 1-11 intact | no document contradicts the chosen design | Medium |
 
 ### RP2 - README skeleton and CI completion (P1 for marks, P3 for polish; no AWS)
@@ -210,9 +227,9 @@ Code that only passes validation is reported as "implemented in configuration", 
 |---|---|---|---|
 | R1 | SSM rejected as "not SSH" | up to 15 (E) plus parts of G | D1 early; keep a documented SSH fallback |
 | R2 | A credential or server address in history or README | all 10 of D | gitleaks on every push, final all-refs scan, no address until D2 |
-| R3 | README missing (today) | A 5, C6 part of 10, D5 part of 10, F3, I 5 | RP2 first |
+| R3 | README missing (today; resolved 2026-11-21 by PR #10) | A 5, C6 part of 10, D5 part of 10, F3, I 5 | RP2 first |
 | R4 | Evidence is local-only for F and G | most of F 15 and G 15 | RP6, RP8 on real AWS; never claim zero downtime without it |
-| R5 | No failed runs yet | H4-H7, S2 | RP9 early |
+| R5 | No failed runs yet (resolved 2026-11-21 and 2026-11-22: five failed runs exist, none may be deleted) | H4-H7, S2 | RP9 early |
 | R6 | Terraform never planned; unknown provider or IAM errors; `rds_superuser` grant limits | schedule, E | staging plan first; rehearsal on staging |
 | R7 | Remote-state bootstrap ordering | E schedule | one-time documented bootstrap, separate approval |
 | R8 | Cost (3 NATs, ALBs, Multi-AZ RDS, running until grading) | S5, budget | priced estimate at T4.8; teardown plan; reduced production if needed |
@@ -227,7 +244,7 @@ C about 4-5 of 10 (CD never runs, no diagram, no screenshots); D about 6-8 of 10
 E about 12-15 of 15; F about 10-15 of 15 (local evidence only); G about 10-14 of 15; H 10/10 at risk; I about 4-5 of 5. Roughly 60-80 of 100 marks are
 currently unproven. These bands are judgement, not measurements.
 
-## 8. Critical blockers (current)
+## 8. Critical blockers (as of 2026-11-21; items 1, 3, 5 and 6 are resolved or changed, see section 8a)
 
 1. No README (A, C6, D5, F3, I).
 2. SSM vs SSH and live-URL questions unanswered (D1, D2).
@@ -237,7 +254,20 @@ currently unproven. These bands are judgement, not measurements.
 6. No failed runs and no Copilot evidence.
 7. Cost and topology not approved.
 
+## 8a. Current blockers (2026-11-22)
+
+1. Instructor answers pending: SSM instead of the assignment's "over SSH" wording (D1) and the live-URL policy (D2). Neither is assumed.
+2. GitHub is unconfigured: 0 Environments, 0 variables, 0 secrets, `CD_ENABLED` unset; no `production` Environment, and `cd.yml` has no production job, so Part D's approval gate cannot be shown.
+3. The real GitHub OIDC `sub` claim was never captured and whether an OIDC provider already exists in the AWS account is unknown, so the OIDC resources cannot be applied.
+4. A fresh `terraform plan` is required (the 2026-11-21 plan is stale), then explicit approval for the apply; the cost envelope (D5) and budget are not decided.
+5. Operator steps not done: the `db-app` and `db-owner` secrets, the host settings file, the database bootstrap. The first deploy is expected to stop at the migrator by design.
+6. How staging gets a demo catalogue is undecided (the seed policy refuses staging).
+7. Copilot troubleshooting evidence is unavailable and cannot be reconstructed; B4 test ownership is the owner's; screenshots are mostly missing.
+8. Production is not implemented (no rolling deploy, no production Terraform plan or approval).
+
 ## 9. Exact next task
+
+Update 2026-11-22: T1.1 to T1.3 and T2.1 are done. The next steps are to merge the evidence pull request and this documentation reconciliation, then follow docs/SUBMISSION_READINESS.md section 7. The text below is the 2026-11-21 plan, kept for history.
 
 **T1.1 then T2.1.** Concretely, after your answers to D1-D8 (at minimum "waiting on the instructor" for D1/D2) and your approval to commit the audit and roadmap
 (T1.3) and merge PR #9 (T1.2), implement **T2.1: create `README.md`** on a new `docs/` branch. It needs no AWS, carries the largest unproven mark total per hour
