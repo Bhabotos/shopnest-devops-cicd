@@ -231,11 +231,12 @@ flowchart TB
 
 **Required checks** on `main` (branch protection, verified by reading the settings on 2026-11-21): Frontend (Node 22), Frontend (Node 24), Backend (Node 22),
 Backend (Node 24), Backend Docker image (each bound to the GitHub Actions app); a pull request is required (0 approvals), branches must be up to date, the rules apply to administrators, and force pushes and branch deletion are disabled
-(**verified live configuration**, written read-back: [`docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md`](docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md), not a raw API response or screenshot).
+(**verified live configuration**, written read-back: [`docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md`](docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md), not a raw API response; the settings screenshots in [`docs/screenshots/part-h/`](docs/screenshots/part-h/) are **partial**).
 "Deploy scripts and Compose" and the Terraform checks are **not** required: the deployment validation is not yet mature enough to be a mandatory merge gate, so only the five application CI checks are mandatory.
 Conversation resolution is intentionally disabled (accepted configuration for a single-maintainer assignment project).
 **Project convention:** pull requests are merged with a normal merge commit. Squash and rebase merging remain **enabled** in GitHub, so this is a working convention, not an enforced restriction.
-A demonstration of a failing required check blocking a merge is still **pending**.
+A failing required check was demonstrated on [PR #28](https://github.com/Bhabotos/shopnest-devops-cicd/pull/28): a deliberate failing test made both Backend checks fail and the Docker-image check skip, and GitHub reported the merge as blocked
+(observed through the GitHub API). **There is no screenshot of the blocked merge**, because the checks are green now. PR #28 is an intentionally open failure demonstration and **must not be merged**.
 
 All workflows declare explicit `permissions:` and every `uses:` reference is pinned to a commit SHA; a static check enforces this for the deployment workflows.
 
@@ -367,14 +368,14 @@ Status words: **Done** = real evidence exists; **Partial** = built, with the gap
 | Part | Marks | Status | Where |
 |---|---|---|---|
 | A. CI/CD concepts | 5 | Written in this README; awaiting the owner's review | [Part A](#part-a-cicd-concepts-for-shopnest-management) |
-| B. CI pipeline | 15 | Partial: CI passes on GitHub; a failing required check blocking a merge is demonstrated by the deliberate failing test on PR #28 (screenshots pending); the owner's own tests are pending | [workflows](#github-actions-workflows) |
-| C. Workflow architecture | 10 | Partial: CI, matrix, parallel jobs, artifact done; the rewritten CD never run; screenshots pending | [workflows](#github-actions-workflows) |
+| B. CI pipeline | 15 | Partial: CI passes on GitHub; a failing required check blocking a merge is demonstrated by the deliberate failing test on PR #28 (the failed and recovered runs are in `docs/screenshots/part-h/`; the blocked-merge view itself was not captured); the owner's own tests are pending | [workflows](#github-actions-workflows) |
+| C. Workflow architecture | 10 | Partial: CI, matrix, parallel jobs, artifact done; the rewritten CD never run; screenshots partial (the CI job graph appears in the Part H screenshots; no CD run exists to show) | [workflows](#github-actions-workflows) |
 | D. Secrets and configuration | 10 | Partial: no secrets in the repo; OIDC, Secrets Manager and the operator role are written as code, not applied; GitHub Environments, the approval gate and real secret usage pending | [secrets](#secrets-and-variables) |
 | E. Deployment to EC2 | 15 | Pending: Terraform and the deployment code are written, nothing is deployed | [Terraform](#terraform-infrastructure) |
 | F. Zero downtime | 15 | Partial: local evidence only; the AWS path is not exercised | [strategy](#zero-downtime-strategy-and-trade-offs) |
 | G. Monitoring and rollback | 15 | Partial: local and offline evidence only; the rewritten rollback workflow never run | [rollback](#rollback-strategy) |
-| H. Debugging and Copilot | 10 | Partial: three deliberate failures (YAML syntax error, deployment health check, failing test), each with a failed and a recovery run, root cause and fix reference, written up in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md); Copilot's generation of `pipeline-demo.yml` is documented in [`docs/copilot/`](docs/copilot/). **Not available:** the Copilot troubleshooting prompts and responses (see [Evidence](#evidence-and-workflow-links)); failure 2 has no fix commit (its recovery was a corrected workflow input). **Pending:** screenshots | [evidence](#evidence-and-workflow-links), [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md) |
-| I. Documentation | 5 | Partial: this README and the AWS integration document; screenshots and a clean-clone dry run pending | this file, [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md) |
+| H. Debugging and Copilot | 10 | Partial: three deliberate failures (YAML syntax error, deployment health check, failing test), each with a failed and a recovery run, root cause and fix reference, written up in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md); Copilot's generation of `pipeline-demo.yml` is documented in [`docs/copilot/`](docs/copilot/). **Not available:** the Copilot troubleshooting prompts and responses (see [Evidence](#evidence-and-workflow-links)); failure 2 has no fix commit (its recovery was a corrected workflow input). **Screenshots:** 13 are in [`docs/screenshots/part-h/`](docs/screenshots/part-h/) and mapped to the runs in the evidence document (some are partial). **Missing:** the expanded health-check step for failure 2 and a screenshot of the blocked merge for failure 3 | [evidence](#evidence-and-workflow-links), [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md) |
+| I. Documentation | 5 | Partial: this README and the AWS integration document; the Part H screenshots are added (some are partial); a clean-clone dry run is pending | this file, [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md) |
 
 ## Evidence and workflow links
 
@@ -398,15 +399,28 @@ All three deliberate failures and their recoveries are real runs that are kept a
 and commit links) is in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md). [PR #28](https://github.com/Bhabotos/shopnest-devops-cicd/pull/28) is a demonstration and is **deliberately left open and unmerged**.
 
 - **Verified evidence:** the six runs and the fix commits above; for failure 1, the line numbers and local parser messages recorded in its commit messages; for failure 2, the input values in the two run logs and the fact that the
-  failed and recovered runs are separate runs (attempt 1 each); for failure 3, the failing log (`expected 3000 to be 3001`) and the recovery.
+  failed and recovered runs are separate runs (attempt 1 each); for failure 3, the failing log (`expected 3000 to be 3001`) and the recovery. For failure 1, GitHub's own annotation
+  (*Invalid workflow file: .github/workflows/pipeline-demo.yml#L20 / You have an error in your yaml syntax on line 20*) is visible in a screenshot.
 - **Not available:** the Copilot troubleshooting prompts and responses. The owner states that GitHub Copilot was used for troubleshooting but could not recall which failure it covered, and no conversation exists in the repository or
   in its GitHub records, so none is claimed and none is reconstructed. The owner's own troubleshooting steps for failure 2 are not recalled, and failure 2 has no fix commit. The records in [`docs/copilot/`](docs/copilot/) cover how
   `pipeline-demo.yml` was *generated* with Copilot; they are the owner's records and are labelled there as not independently verified.
-- **Pending:** all screenshots, and the text that GitHub's web page shows for the failure 1 run.
+- **Still missing:** the expanded *Check health endpoint* step for failure 2, a screenshot of the blocked merge on PR #28 (it cannot be reproduced now), the lower half of the branch protection page (required check names, up to date,
+  administrator enforcement, force pushes), and the Actions list filtered to failed runs.
+
+**Part H screenshots** (folder: [`docs/screenshots/part-h/`](docs/screenshots/part-h/); the evidence level of each, and the run it belongs to, is in the
+[screenshot evidence map](docs/failures/PART_H_FAILURES.md#screenshot-evidence-map)):
+- **Failure 1:** [failed run with GitHub's annotation](docs/screenshots/part-h/YAML%20Syntax%20Failure.png), [recovered run](docs/screenshots/part-h/Sucessfully%20recovery.png).
+- **Failure 2:** [failed run](docs/screenshots/part-h/Health%20Check%20failure.png) (**partial**: the failing step is not expanded), [recovered run](docs/screenshots/part-h/Health%20Check%20Recovery.png).
+- **Failure 3:** [failed CI run](docs/screenshots/part-h/Failed%20backend%20test.png), [Test log](docs/screenshots/part-h/Backend%20Failed%20run.png), [fix commit](docs/screenshots/part-h/Fix%20commit.png),
+  [recovered CI run](docs/screenshots/part-h/recovery%20plan.png), [PR #28 open and marked DO NOT MERGE](docs/screenshots/part-h/PR28%20open%20test.png).
+- **Settings and overview (all partial):** [branch protection](docs/screenshots/part-h/Branch%20Protection.png), [protection rules list](docs/screenshots/part-h/CI%20Configure.png),
+  [Actions run list](docs/screenshots/part-h/Github%20actions.png), [README top](docs/screenshots/part-h/Readme.png).
+
+No screenshot shows GitHub Copilot, and none shows an AWS deployment, a zero-downtime release or a rollback on AWS: none has been performed. PR #28 stays **open and unmerged** and must not be merged.
 
 Local evidence: [`docs/evidence/phase2/`](docs/evidence/phase2/) (lint, tests, build, stack verification, secret scans) and
 [`docs/evidence/bluegreen-local/`](docs/evidence/bluegreen-local/) (blue/green and rollback rehearsal; **local, not AWS, and before the AWS-mode changes**).
-Screenshots of runs and settings are **pending** and will be added under `docs/screenshots/` (the Part H ones under `docs/screenshots/part-h/`); no screenshot is claimed here.
+Screenshots for other parts (for example a CD run or a deployed application) do not exist, because CD has never run and nothing is deployed; no such screenshot is claimed here.
 
 ## Live URL
 
