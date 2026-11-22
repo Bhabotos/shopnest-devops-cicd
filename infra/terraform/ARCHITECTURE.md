@@ -3,13 +3,14 @@
 Status: a **design**, written as Terraform and statically validated. Nothing has been planned against AWS, created or deployed.
 This file records the decisions, the flows and the failure modes. Operating details, costs and the security review are in
 [`README.md`](README.md); required changes to the existing deploy code are in [`INTEGRATION_GAPS.md`](INTEGRATION_GAPS.md).
-It supersedes, for the AWS side, the earlier single-instance design in `docs/ARCHITECTURE.md` (not yet updated: that needs approval).
+It superseded, for the AWS side, the earlier single-instance design in `docs/ARCHITECTURE.md`, which was rewritten to match in PR #34 (2026-11-22).
+Note on decisions 2 and 3 below (a 2026-11 design record): the SSH-based workflows were since rewritten for Systems Manager (PR #26). Decision 3 said "no bundle upload"; the implemented release still uploads a small bundle (scripts, settings, frontend build) to S3 next to the ECR image, which is pulled by digest (`docs/AWS_STAGING_INTEGRATION.md`). None of it has run on AWS.
 
 ## Decisions (final)
 | # | Area | Decision | Consequence |
 |---|---|---|---|
 | 1 | Database | private AWS RDS PostgreSQL | no PostgreSQL container; the Compose `db` service and `@db:5432` go away |
-| 2 | Deployment access | AWS Systems Manager | no SSH, no key pair, no inbound port; the SSH-based workflows must be rewritten |
+| 2 | Deployment access | AWS Systems Manager | no SSH, no key pair, no inbound port; the SSH-based workflows must be rewritten (done in code, PR #26; never run) |
 | 3 | Application delivery | Amazon ECR | CI pushes an immutable image; instances pull it with their role; no bundle upload |
 | 4 | Database secret | AWS SDK at runtime | the backend needs a code change; config holds only the secret identifier |
 | 5 | Private internet access | NAT Gateway | outbound dependency; production one NAT per AZ, staging a single NAT (cost optimisation and an outbound SPOF; not multi-AZ NAT) |

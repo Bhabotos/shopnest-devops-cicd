@@ -156,7 +156,7 @@ IAM cannot stop an administrator of the account from starting the bootstrap buil
 |---|---|---|
 | `AWS_ROLE_ARN` | the role the workflow assumes through OIDC | Terraform output `github_deploy_role_arn` |
 | `AWS_REGION` | the region | `ap-south-1` |
-| `ECR_REPOSITORY` | the repository the image is pushed to, by name | `shopnest/staging/backend` (from the ECR output) |
+| `ECR_REPOSITORY` | the repository the image is pushed to, by **name** (not the registry URL) | `shopnest/staging/backend`, i.e. `<project>/<environment>/backend`. No Terraform output returns the bare name: `ecr_repository_urls` returns registry URLs, so take the name from `ecr_repository_names` (default `backend`) or from the URL's path |
 | `ARTIFACT_BUCKET` | the bucket the bundle is uploaded to | Terraform output `artifact_bucket_name` |
 | `MIGRATOR_PROJECT` | the CodeBuild migrator project | Terraform output `migrator_project_name` |
 | `SSM_DEPLOY_DOCUMENT` | the deploy command document | Terraform output `ssm_deploy_document_name` |
