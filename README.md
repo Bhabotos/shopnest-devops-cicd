@@ -291,7 +291,7 @@ Approximate cost estimates are in section 12 of the Terraform README (an estimat
   verifies the bundle's SHA-256 before extracting it, pulls the image by digest, proves the metadata-service isolation, and runs the blue/green deploy with automatic rollback.
   Exit codes 0, 1 and 3 come back unchanged; code 4 means the result could not be confirmed. The sequence, with a diagram, is in [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md#5-deployment-sequence).
 - **Never run against AWS.** The behaviour is covered by offline tests with fakes (see [Testing](#testing-and-validation)), not by any real run.
-- **Production is not deployed** by this workflow (no production infrastructure exists).
+- **Production is not deployed** by this workflow (no production infrastructure exists). Its last job, `production-approval`, is only a gate bound to the `production` Environment (it deploys nothing); the Environment and its required reviewer are **not yet configured**, so the approval is not verified.
 - **Unresolved:** how staging gets a demo catalogue (the seed policy refuses staging and the instance cannot seed), the instructor's answer on Systems Manager instead of SSH, and the live-URL rule. See the
   [unresolved decisions](docs/AWS_STAGING_INTEGRATION.md#14-unresolved-decisions).
 - **Instructor confirmation pending:** the assignment says deployment is "over SSH"; the design uses Systems Manager instead. This is waiting for the instructor's answer. Until then it is not assumed to be acceptable.

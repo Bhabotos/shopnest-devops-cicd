@@ -2,7 +2,8 @@
 
 It reads the workflow files only. It does not run a workflow and contacts nothing. It replaces the old "SSH steps stay identical"
 check: there is no SSH any more, so the rules are now that no SSH can come back, that credentials are never stored, that a failed
-migration blocks the deployment, that production is never deployed, and that a rollback request is refused rather than ignored.
+migration blocks the deployment, that nothing is deployed to production (the only production job is an approval gate with no AWS access),
+and that a rollback request is refused rather than ignored.
 """
 
 import re
@@ -51,7 +52,8 @@ for name, code in (("cd.yml", cd_code), ("rollback.yml", rb_code)):
     check(f"{name}: no SSH of any kind can come back", not any(re.search(p, code) for p in FORBIDDEN_SSH),
           str([p for p in FORBIDDEN_SSH if re.search(p, code)]))
     check(f"{name}: no stored credential (no secrets, no access keys)", "secrets." not in code and "aws-access-key-id" not in code and "aws-secret-access-key" not in code and "AWS_SECRET_ACCESS_KEY" not in code)
-    check(f"{name}: nothing is deployed to production", "environment: production" not in code and "--env production" not in code)
+    check(f"{name}: nothing is deployed to production", "--env production" not in code and "deploy/production" not in code and "ecr/production" not in code)
+    check(f"{name}: only cd.yml's approval gate may bind the production Environment", ("environment: production" in code) == (name == "cd.yml"))
 
 for name, data, code in (("cd.yml", cd, cd_code), ("rollback.yml", rb, rb_code)):
     print(f"== {name}: permissions and pinning")
@@ -72,7 +74,7 @@ print("== cd.yml: the order of a deploy, and a failed migration blocks it")
 gate = cd["jobs"]["gate"]
 check("the gate needs CD_ENABLED to be true", "vars.CD_ENABLED == 'true'" in str(gate["if"]))
 check("the gate needs a successful CI run on main", "conclusion == 'success'" in str(gate["if"]) and "head_branch == 'main'" in str(gate["if"]))
-check("every later job depends on the gate", all("gate" in (j.get("needs") if isinstance(j.get("needs"), list) else [j.get("needs")]) or n in ("gate", "production-not-deployed") for n, j in cd["jobs"].items()))
+check("every later job depends on the gate", all("gate" in (j.get("needs") if isinstance(j.get("needs"), list) else [j.get("needs")]) or n == "gate" for n, j in cd["jobs"].items()))
 steps = cd["jobs"]["deploy-staging"]["steps"]
 def index_of(fragment):
     for i, s in enumerate(steps):
@@ -90,8 +92,18 @@ check("the bundle is checked against the package job's hash before AWS is touche
 check("exit codes 1 and 3 are reported as such", "(exit 1)" in cd_code and "(exit 3)" in cd_code and "exit \"$rc\"" in cd_code)
 check("the deploy environment is staging", cd["jobs"]["deploy-staging"].get("environment") == "staging")
 check("the deploys never overlap", cd["jobs"]["deploy-staging"]["concurrency"]["group"] == "deploy-staging" and cd["jobs"]["deploy-staging"]["concurrency"]["cancel-in-progress"] is False)
-check("the production note job writes a notice only (no environment, no permissions, no AWS)",
-      cd["jobs"]["production-not-deployed"].get("environment") is None and cd["jobs"]["production-not-deployed"].get("permissions") == {} and "aws" not in str(cd["jobs"]["production-not-deployed"]).lower().replace("workflow", ""))
+print("== cd.yml: the production approval gate (it approves nothing real: no production deployment exists)")
+approval = cd["jobs"].get("production-approval", {})
+prod_jobs = sorted(n for n, j in cd["jobs"].items() if j.get("environment") == "production")
+check("exactly one job binds the production Environment: production-approval", prod_jobs == ["production-approval"], str(prod_jobs))
+check("the approval gate waits for the gate and for a successful staging deploy", approval.get("needs") == ["gate", "deploy-staging"], str(approval.get("needs")))
+check("the approval gate has no `if:` that could let it run without the staging deploy succeeding", "if" not in approval)
+check("the approval gate has no permissions, so it cannot obtain AWS credentials (no id-token, no contents)", approval.get("permissions") == {})
+approval_text = str(approval).lower().replace("workflow", "")
+check("the approval gate has no checkout, no AWS step, no deploy script and no secrets", not any(w in approval_text for w in ("aws", "checkout", "ssm", "ecr", "s3", "codebuild", "secrets.", "deploy/")))
+check("the approval gate only writes a notice (one step, no uses:)", len(approval.get("steps", [])) == 1 and "uses" not in approval["steps"][0])
+check("the approval gate says plainly that nothing was deployed", "nothing was deployed" in cd_code)
+check("the staging deploy job does not use the production Environment or the production gate", cd["jobs"]["deploy-staging"].get("environment") == "staging" and "production" not in str(cd["jobs"]["deploy-staging"].get("needs", "")))
 
 print("== rollback.yml: it fails closed, and it never touches the schema")
 guard = rb["jobs"]["guard"]

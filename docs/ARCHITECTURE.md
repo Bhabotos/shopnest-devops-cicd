@@ -56,7 +56,7 @@
 
 ## Pipelines
 - `ci.yml`: on push and pull request to `main`. Frontend and backend jobs in parallel (install, lint, test, build) on a Node.js 22 and 24 matrix; build outputs are uploaded as artifacts and consumed by CD.
-- `cd.yml`: runs after CI succeeds for a push to `main`, only when the repository variable `CD_ENABLED` is `true`. Jobs: `gate`, `package`, `deploy-staging` (Environment `staging`), and a final job that records that **production is not deployed** by this workflow.
+- `cd.yml`: runs after CI succeeds for a push to `main`, only when the repository variable `CD_ENABLED` is `true`. Jobs: `gate`, `package`, `deploy-staging` (Environment `staging`), and `production-approval`, a gate bound to the `production` Environment so that GitHub can hold it for a required reviewer. **Production is not deployed**: the gate has no AWS access and deploys nothing. Whether the approval works is not verified until the Environment is configured and tested in GitHub.
   Every run so far was `skipped`; the deploy jobs have never run.
 - `rollback.yml`: manual (`workflow_dispatch`) with an environment and a full commit SHA. Only staging is implemented; a production request, a ref other than `main`, or `CD_ENABLED` not set is refused.
 - `terraform-ci.yml`: `fmt`, `validate` and static IAM checks. It is not an AWS acceptance test.

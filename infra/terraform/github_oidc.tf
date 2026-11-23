@@ -68,6 +68,14 @@ resource "aws_iam_role" "github_deploy" {
       condition     = var.github_repository != "" && length(var.github_oidc_subjects) > 0
       error_message = "enable_cicd needs github_repository and at least one github_oidc_subjects value (the real OIDC claim, captured from a workflow run)."
     }
+    # The role may be assumed only by a job that runs in THIS stack's GitHub Environment. The repository part of the subject is not
+    # checked here: with immutable claims it contains numeric owner and repository IDs, so it must be captured from the real token.
+    precondition {
+      condition = alltrue([
+        for s in var.github_oidc_subjects : startswith(s, "repo:") && endswith(s, ":environment:${var.environment}")
+      ])
+      error_message = "Every github_oidc_subjects value must be an environment subject for this stack: it must start with 'repo:' and end with ':environment:${var.environment}'. A branch or another environment (for example production on the staging role) must never be able to assume this role."
+    }
     precondition {
       condition     = var.create_github_oidc_provider != (var.github_oidc_provider_arn != "")
       error_message = "Set exactly one of create_github_oidc_provider = true or github_oidc_provider_arn (an account can hold only one GitHub OIDC provider)."

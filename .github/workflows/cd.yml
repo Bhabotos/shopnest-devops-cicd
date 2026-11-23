@@ -19,7 +19,8 @@ name: CD
 #
 # STATUS: written and tested offline only (deploy/ci/*.sh and their tests, actionlint); it has NEVER run against AWS. Nothing here
 # runs until the repository variable CD_ENABLED is set to "true" (a deliberate, separate step), so merging this file cannot start
-# a deployment. Production is NOT deployed by this workflow (no production infrastructure exists): see the last job. Manual
+# a deployment. Production is NOT deployed by this workflow (no production infrastructure exists); its last job is only an approval
+# gate bound to the `production` Environment (see that job). Manual
 # rollback is the separate rollback.yml workflow.
 on:
   workflow_run:
@@ -222,20 +223,31 @@ jobs:
             echo "- Result code: \`${EXIT_CODE:-not reached}\` (0 deployed; 1 failed, previous release serving; 3 failed and recovery failed; 4 unconfirmed)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Production is deliberately NOT deployed by this workflow: no production infrastructure (two instances, Multi-AZ database,
-  # rolling deploy) exists, and a production job here would only invite a half-working deployment. This job writes that down in
-  # the run summary and does nothing else. It never binds the `production` GitHub Environment, so it cannot ask anyone to approve
-  # a deployment that does not exist.
-  production-not-deployed:
-    name: Production is not deployed by this workflow
-    needs: deploy-staging
+  # PRODUCTION APPROVAL GATE. This job is bound to the `production` GitHub Environment, so GitHub pauses it until a required reviewer
+  # approves (the Environment's protection rules are configured in GitHub settings, not here: see docs/GITHUB_SETUP.md; until they are
+  # configured and tested, approval is NOT verified). WARNING: GitHub creates a missing Environment on first use WITHOUT any protection
+  # rule, and then this job would run at once: create `production` with its required reviewer BEFORE setting CD_ENABLED. It runs only after staging deployed successfully, which also means only after CD_ENABLED,
+  # a successful CI run on main and the latest commit were confirmed by `gate`.
+  #
+  # It does NOT deploy anything: no production infrastructure exists and a production deploy job is not implemented. It has no
+  # permissions, no `id-token` (so it cannot obtain AWS credentials), no checkout and no AWS step; and the deploy role's trust policy
+  # accepts only the staging subject. A future production deploy job must `needs: production-approval`, bind `environment: production`
+  # itself, and use a role whose trust policy lists the production subject (and only that).
+  production-approval:
+    name: Production approval gate (nothing is deployed)
+    needs: [gate, deploy-staging]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment: production
     permissions: {}
     steps:
-      - name: Record that production was not touched
+      - name: Record that production was approved and that nothing was deployed
+        env:
+          RELEASE_SHA: ${{ needs.gate.outputs.sha }}
         run: |
           {
-            echo "### Production"
-            echo "Production is not deployed by this workflow (production CD is not implemented). Nothing was changed there."
+            echo "### Production approval"
+            echo "- Release: \`${RELEASE_SHA}\` (already deployed to staging)"
+            echo "- This job is bound to the \`production\` Environment: if it has required reviewers, GitHub held this job until one approved it."
+            echo "- **Production deployment is not implemented: nothing was deployed or changed in production.**"
           } >> "$GITHUB_STEP_SUMMARY"
