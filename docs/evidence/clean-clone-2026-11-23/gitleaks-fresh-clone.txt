@@ -1,0 +1,14 @@
+# Gitleaks: fresh clone of Bhabotos/shopnest-devops-cicd at 053648a7cd9b8395c3fa0083007c3a7bc3ca6bc6
+Tool: gitleaks 8.30.1 (`gitleaks version`)
+Config: `.gitleaks.toml` (default rules plus the repository's IP-address and EC2-hostname rules)
+Command: `gitleaks git . --config .gitleaks.toml --no-banner --redact --log-opts=--all`
+Run (UTC): 2026-11-23, about 06:43Z, before this evidence was committed
+Scope: a new clone checked out at 053648a7cd9b8395c3fa0083007c3a7bc3ca6bc6, with all branches fetched from GitHub as remote refs; committed history only (Git-ignored files are not covered)
+Refs scanned: 47; commits reachable from all refs: 118
+Exit code: 0
+Output below is redacted (`--redact`), with colour codes removed; nothing else was edited. No secret value appears.
+
+----- output -----
+12:43PM INF 81 commits scanned.
+12:43PM INF scanned ~2018140 bytes (2.02 MB) in 316ms
+12:43PM INF no leaks found
