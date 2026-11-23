@@ -65,7 +65,7 @@ Labels: IV = implemented and verified; IE = implemented but evidence incomplete;
 | B | | tests written by the owner | IE (drafted with AI assistance; owner must adopt) | |
 | B | | PR blocked by a failing required check (**B5**) | IE: demonstrated on PR #28 (merge state BLOCKED, read through the API); **no screenshot of the blocked state, and it cannot be recreated** | **11-13** |
 | C | 10 | separate CI and CD files, jobs, `needs`, matrix, parallel, artifact upload, README diagram | IV for CI; IE for CD (file written, **never ran**; artifact hand-off in CD never executed) | 6-7 |
-| D | 10 | no credentials in repo; separate env config files; README lists names | IV (guard, scans clean; final all-history scan still to do) | |
+| D | 10 | no credentials in repo; separate env config files; README lists names | IV (guard, scans clean; all-history gitleaks scan run 2026-11-23 for `053648a`, no leaks, see `docs/evidence/clean-clone-2026-11-23/`) | |
 | D | | GitHub Environments, production approval gate, secrets in GitHub | IE (updated 2026-11-23): Environments `staging` and `production` configured (reviewer, main-only, administrator bypass off); **0 secrets, 0 variables**; the approval job (`production-approval`, deploys nothing) is in code, but no run has paused at "Waiting for review", so approval is **not verified** | **4-5** (unchanged: no approval evidence yet) |
 | E | 15 | AWS EC2 three-tier, deploy after CI (assignment wording: "over SSH"; implemented design: SSM, pending instructor confirmation), private DB | NI: Terraform written and statically validated only; no EC2, no plan or apply, no deployment, no live URL | **0-3** |
 | F | 15 | zero downtime with request evidence | IE, **local/offline only**: real-Docker rehearsals (238/238, 107/107, 161/161 in separate steps) and 125 offline checks; a post-switch fault cost 79 of 171 requests; nothing on AWS | **0-4** |
@@ -94,7 +94,7 @@ Effort to a first verified staging release: roughly 8 to 16 working hours includ
 ## 6. Submission checklist (evidence vs planned)
 | Item | Actual evidence | Gap |
 |---|---|---|
-| README architecture and setup | on `main` (PR #10, later PRs #27 and #30) | owner read-through; GitHub Mermaid rendering unverified; clean-clone dry run not done |
+| README architecture and setup | on `main` (PR #10, later PRs #27 and #30) | owner read-through; GitHub Mermaid rendering unverified. Clean-clone dry run done locally on 2026-11-23 for commit `053648a` (frontend 39 passed; backend 160 passed, 11 integration tests skipped without a database; workflow checks 77 passed; Terraform IAM checks 97 passed), see `docs/evidence/clean-clone-2026-11-23/`; it did not include PR #42 and was not run on AWS |
 | CI success | many green runs, CI succeeded on `main` at `18943e5` (run 44986851698) and on the heads of PRs #31 and #32 | screenshots for the CI triggers, matrix and job graph do not exist |
 | Accidental CI failures | runs 44864872114 and 44916673865 | not Part H failures; keep, do not delete |
 | Deliberate failure 1, YAML | failed 44884178546, recovered 44884710861, fix `d2b645c` | screenshots on `main` (PR #32) |
@@ -118,5 +118,5 @@ Effort to a first verified staging release: roughly 8 to 16 working hours includ
 3. Decide how to present the unavailable Copilot troubleshooting evidence; add the owner's own Copilot history only if it exists.
 4. Adopt, rewrite or disclose the B4 tests.
 5. Decide on GitHub Environments and the production approval gate (about 4 to 5 marks of Part D); this needs your approval.
-6. Send the instructor draft (`docs/INSTRUCTOR_CLARIFICATION_DRAFT.md`); run the final all-history gitleaks scan; do the clean-clone dry run.
+6. Send the instructor draft (`docs/INSTRUCTOR_CLARIFICATION_DRAFT.md`); the final all-history gitleaks scan (no leaks, 2026-11-23, gitleaks 8.30.1, redacted output kept) and the clean-clone dry run were done for `053648a`: see `docs/evidence/clean-clone-2026-11-23/` (re-run the scan if new commits are added before submission).
 7. Only if hours and budget remain and you approve: the AWS route in section 5.
