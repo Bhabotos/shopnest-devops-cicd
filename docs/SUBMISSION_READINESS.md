@@ -61,7 +61,7 @@ Labels: IV = implemented and verified; IE = implemented but evidence incomplete;
 | B | | PR blocked by a failing required check (**B5**) | IE: demonstrated on PR #28 (merge state BLOCKED, read through the API); **no screenshot of the blocked state, and it cannot be recreated** | **11-13** |
 | C | 10 | separate CI and CD files, jobs, `needs`, matrix, parallel, artifact upload, README diagram | IV for CI; IE for CD (file written, **never ran**; artifact hand-off in CD never executed) | 6-7 |
 | D | 10 | no credentials in repo; separate env config files; README lists names | IV (guard, scans clean; final all-history scan still to do) | |
-| D | | GitHub Environments, production approval gate, secrets in GitHub | NI: **0 Environments, 0 secrets, 0 variables** | **4-5** |
+| D | | GitHub Environments, production approval gate, secrets in GitHub | NI: **0 Environments, 0 secrets, 0 variables**; an approval job (`production-approval`, deploys nothing) exists in code only, so approval is **not verified** | **4-5** |
 | E | 15 | AWS EC2 three-tier, deploy after CI (assignment wording: "over SSH"; implemented design: SSM, pending instructor confirmation), private DB | NI: Terraform written and statically validated only; no EC2, no plan or apply, no deployment, no live URL | **0-3** |
 | F | 15 | zero downtime with request evidence | IE, **local/offline only**: real-Docker rehearsals (238/238, 107/107, 161/161 in separate steps) and 125 offline checks; a post-switch fault cost 79 of 171 requests; nothing on AWS | **0-4** |
 | G | 15 | health check, automatic rollback, manual rollback, logs | IE, **local/offline only**: scripts and local rehearsals; `rollback.yml` and CD never ran; no live automatic rollback | **3-6** |
@@ -100,7 +100,7 @@ Effort to a first verified staging release: roughly 8 to 16 working hours includ
 | Test results | test files merged; CI runs (run 44920064307 reported 171 backend tests) | B4 ownership |
 | Docker build | CI job "Backend Docker image" passes | none |
 | Terraform validation | Terraform CI (format, init, validate, IAM rule checks, secret scan) | no apply; a stale local plan exists |
-| GitHub Environments, secrets, variables | **none** (0 / 0 / 0) | no production approval gate |
+| GitHub Environments, secrets, variables | **none** (0 / 0 / 0) | no `production` Environment; the approval job `production-approval` exists in code only (it deploys nothing), so manual approval is **not verified**. GitHub may also list a `production` Deployment entry for it although nothing is deployed (unverified) |
 | Deployment evidence | **none** | not done |
 | Rollback evidence | **local and offline only** | `rollback.yml` never ran |
 | Screenshots | 13 Part H screenshots on `main` (PR #32), two partial | none for CI triggers, matrix, job graph or CD; no blocked merge; failure 2's failing step not expanded; branch protection page only the top |

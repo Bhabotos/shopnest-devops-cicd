@@ -46,7 +46,7 @@ Settings -> Environments:
 | Environment | Protection | Used by |
 |---|---|---|
 | `staging` | Deployment branches: `main` only. A required reviewer is recommended. | `deploy-staging` in `cd.yml` and the deploy job in `rollback.yml` (both declare `environment: staging`) |
-| `production` | Deployment branches: `main` only. Required reviewers: the repo owner. | **Nothing yet.** No workflow job binds `production`: production CD is not implemented, so no approval gate exists today. |
+| `production` | Deployment branches: `main` only. Required reviewers: the repo owner. | The `production-approval` job in `cd.yml` (an approval gate only: **no production deployment is implemented**, so approving it deploys nothing). |
 
 Note: with a single maintainer, leave "Prevent self-review" OFF for `production`, otherwise nobody can approve.
 
@@ -67,6 +67,26 @@ Names below were read from `cd.yml` and `rollback.yml` on `main` (`7d88e9b`):
 
 The values come from Terraform outputs after an approved apply, so these variables cannot be set meaningfully before AWS exists.
 Reference: `docs/AWS_STAGING_INTEGRATION.md` section 4.
+
+### 4.1 Production approval gate (Part D)
+`cd.yml` ends with the job `production-approval`: `environment: production`, no permissions, no `id-token`, no checkout, no AWS step. It needs `gate` and
+a successful `deploy-staging`. Its only action is to write a notice that nothing was deployed. It exists so that a production step is **held for a
+manual approval**; it does not deploy, because no production infrastructure or production deploy job exists.
+
+**Manual configuration (GitHub settings; none of it is done, and it needs the repository owner):**
+1. Create the `staging` Environment (deployment branches: `main` only).
+2. Create the `production` Environment with **Required reviewers** (the repo owner), **Deployment branches: `main` only**, and "Prevent self-review" OFF (single maintainer).
+3. Only then set the repository variable `CD_ENABLED`, and the `staging` variables from the table above. **Order matters:** if a workflow references an Environment that does not exist, GitHub creates it
+   with **no protection rules**, and the approval job would run without waiting. Do not set `CD_ENABLED` before step 2.
+4. **Warning (UNVERIFIED behaviour):** because `production-approval` is bound to the `production` Environment, GitHub may record a deployment to `production` for it (the repository's Deployments view and the Environment's history) even though the job deploys nothing. The run summary says plainly that nothing was deployed. Check what GitHub shows during the test below, and do not present that entry as a production deployment in any evidence.
+5. Test it for real: run CD on `main`, confirm the run stops at "Production approval gate" with "Waiting for review", approve it, and keep the screenshots. Until that is done, **approval is not verified**.
+
+**OIDC subjects (immutable claims).** This repository's subject claim uses numeric IDs (GitHub's immutable-subject setting, read with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`).
+So the staging deploy job's subject is expected to look like `repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:staging`, not `repo:<owner>/<repo>:environment:staging`.
+That form is **derived from the settings, not verified from a real token**: capture the real `sub` from a workflow run before writing it into `github_oidc_subjects`.
+The staging role must list **only** the staging subject. Terraform now refuses a subject that does not start with `repo:` and end with `:environment:<this stack's environment>`,
+so a branch, a pull request, or the `production` Environment cannot be put on the staging role by mistake. A future production role (separate stack and workspace) lists only the production subject.
+The approval job cannot assume any role in any case: it has no `id-token` permission.
 
 ## 5. Branch protection for `main` (Part B)
 Configure after the first CI run exists (Phase 3): GitHub can only select status checks that

@@ -220,7 +220,7 @@ Step by step:
    6. the idle colour starts, must report healthy and the expected commit, and only then does Nginx switch; failures after the switch return traffic to the previous release.
 5. **The host never runs migrations and cannot seed.** It never holds the owner credentials.
 
-**Production is not deployed by this workflow.** No production infrastructure exists. A final job only writes a notice in the run summary.
+**Production is not deployed by this workflow.** No production infrastructure exists. The final job, `production-approval`, is bound to the `production` GitHub Environment so a required reviewer can hold it, and only writes a notice in the run summary (no permissions, no AWS credentials). Configuring and testing the Environment is described in `docs/GITHUB_SETUP.md` section 4.1; until then the approval is not verified.
 
 ## 6. Rollback and exit codes
 
