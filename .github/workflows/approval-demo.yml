@@ -1,0 +1,28 @@
+name: approval-demo
+
+# Part D: a demonstration of the GitHub `production` Environment approval gate. It is separate from cd.yml and deploys NOTHING.
+# It exists only because the approval job in cd.yml needs a successful staging deploy (AWS), so it cannot be shown without AWS.
+# Manual start only. The job is bound to the `production` Environment: GitHub pauses it ("Waiting for review") until the required
+# reviewer configured on that Environment approves it. No AWS, no Terraform, no remote-shell or Systems Manager commands, no Docker, no checkout, no secrets or
+# variables, no id-token. It proves the Environment's approval mechanism only, not the cd.yml chain.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  production-approval-demo:
+    name: Production approval demo (nothing is deployed)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    permissions: {}
+    steps:
+      - name: Notice
+        run: |
+          {
+            echo "### Production approval demonstration"
+            echo "This is a GitHub Production Environment approval demonstration only. No AWS deployment or infrastructure modification is performed."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "This is a GitHub Production Environment approval demonstration only. No AWS deployment or infrastructure modification is performed."
