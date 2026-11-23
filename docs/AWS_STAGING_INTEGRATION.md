@@ -403,7 +403,7 @@ The checks also detect deliberate breakage: the workflow checker caught 16 of 16
 | Decision | State |
 |---|---|
 | **How staging gets a demo catalogue.** The seed policy refuses `staging`, and the instance can no longer seed (it never holds the owner credentials). Options: allow a deliberate, flagged seed in the migrator; insert products by a one-off operator SQL; or run staging with an empty catalogue | **Unresolved** |
-| SSM instead of SSH, against the assignment's "deployment over SSH" wording | **Waiting for the instructor.** Not assumed acceptable |
+| SSM instead of SSH, against the assignment's "deployment over SSH" wording | **Approved by the instructor** (owner-stated 2026-11-23; no written copy in the repository). This is not AWS access: IAM permissions and budget are separate and not granted |
 | A live URL and whether an address may appear in the repository | **Waiting for the instructor.** No address is written anywhere |
 | HTTPS | HTTP only for now (no domain); a recorded decision |
 | Whether a GitHub OIDC provider already exists in the account | **Unknown**; needs a read-only AWS check |

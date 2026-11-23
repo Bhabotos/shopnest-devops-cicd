@@ -7,10 +7,10 @@
 > [`docs/AWS_STAGING_INTEGRATION.md`](AWS_STAGING_INTEGRATION.md), which is the reference where the two differ.
 > The earlier design in this file (one EC2 instance reached over SSH, with a temporary port-22 rule per run) was **replaced**. It is kept only in Git history.
 
-## Mandated requirement vs our implementation (pending instructor confirmation)
+## Mandated requirement vs our implementation (SSM approved by the instructor)
 - **M:** the assignment text describes deployment to the server "over SSH".
 - **R:** the implementation deploys through **AWS Systems Manager (SSM)** and **CodeBuild**, authenticated with **GitHub OIDC**. No SSH is used and no inbound port 22 exists.
-- **Compliance with the SSH wording is PENDING instructor confirmation.** Until the instructor answers, do not describe the SSM design as meeting that wording.
+- **SSM instead of the SSH wording is approved by the instructor (stated by the owner on 2026-11-23; no written confirmation is stored in this repository).** This approves the method only: AWS IAM permissions, infrastructure access and budget are separate and are NOT available or approved, and nothing is deployed.
   The reasoning for choosing SSM (no open port, no stored key) is in `AWS_STAGING_INTEGRATION.md`.
 
 ## Tiers
@@ -85,6 +85,6 @@ Staging only, never production: establish a known-good release A, run a request 
 
 ## Open items
 - Live URL versus the server-address restriction (instructor).
-- SSH wording versus the SSM design (instructor confirmation pending).
+- SSH wording versus the SSM design: SSM is approved by the instructor (owner-stated 2026-11-23, no written copy in the repository); AWS permissions and budget are still not available.
 - Terraform `plan` (a fresh one is required) and `apply` need the user's explicit approval; no AWS resource exists.
 - GitHub Environments and variables do not exist yet (0 Environments, 0 secrets, 0 variables); creating them needs separate approval.

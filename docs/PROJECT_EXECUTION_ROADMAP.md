@@ -60,7 +60,7 @@ Not re-verified in this review: `terraform validate` results (taken from CI runs
 
 | ID | Status | Answer |
 |---|---|---|
-| D1 | WAITING FOR INSTRUCTOR CONFIRMATION | no instructor reply exists; none assumed |
+| D1 | APPROVED by the instructor (owner-stated 2026-11-23; updated from "waiting"; no written copy in the repository) | SSM instead of SSH; this is not AWS access |
 | D2 | WAITING FOR INSTRUCTOR CONFIRMATION | no instructor reply exists; none assumed; no address in any repository file |
 | D3 | DECIDED (user) | HTTP only for now; documented trade-off |
 | D4 | DECIDED (user) | single `cd.yml` |
@@ -256,7 +256,7 @@ currently unproven. These bands are judgement, not measurements.
 
 ## 8a. Current blockers (2026-11-22)
 
-1. Instructor answers pending: SSM instead of the assignment's "over SSH" wording (D1) and the live-URL policy (D2). Neither is assumed.
+1. Instructor answers: SSM instead of the assignment's "over SSH" wording (D1) is approved (owner-stated 2026-11-23; no written copy in the repository); the live-URL policy (D2) is still pending and not assumed.
 2. GitHub is unconfigured: 0 Environments, 0 variables, 0 secrets, `CD_ENABLED` unset; no `production` Environment. `cd.yml` has the approval job `production-approval` (PR #39, code only, deploys nothing), but without the Environment and its required reviewer, and a run paused and approved in GitHub, Part D's approval gate cannot be shown.
 3. The real GitHub OIDC `sub` claim was never captured and whether an OIDC provider already exists in the AWS account is unknown, so the OIDC resources cannot be applied.
 4. A fresh `terraform plan` is required (the 2026-11-21 plan is stale), then explicit approval for the apply; the cost envelope (D5) and budget are not decided.
