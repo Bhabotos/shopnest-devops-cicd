@@ -7,7 +7,7 @@ Numbering: roadmap phases are called **RP1-RP10** and tasks **T<phase>.<n>**, to
 `PROJECT_STATUS.md` (that table stays authoritative for the status tracker). Priorities: **P0** critical blocker, **P1** core functionality,
 **P2** production readiness, **P3** documentation and final evidence. Complexity: Low / Medium / High (relative to this project).
 
-## Status update 2026-11-22 (first read at `main` = `011752c`; updated after PRs #31 and #32 to `main` = `18943e5`)
+## Status update 2026-11-22 (first read at `main` = `011752c`; updated after PRs #31 and #32 to `main` = `18943e5`; row RP7 updated 2026-11-23 after PR #39, `main` = `9682ec4`)
 
 Coarse state per roadmap phase. "Implemented, not executed" means merged code covered by offline or static checks only; nothing below has run on AWS.
 
@@ -19,7 +19,7 @@ Coarse state per roadmap phase. "Implemented, not executed" means merged code co
 | RP4 Terraform | Extended (PR #25: OIDC, CodeBuild, SSM documents, gated by `enable_cicd`). Not done: remote state (still local, unlocked), HTTPS (a recorded decision: HTTP only), a fresh plan, the apply. A local plan from 2026-11-21 (54 resources) is stale and must not be applied. AWS gates 1 and 2 are NOT passed |
 | RP5 deployment code | Implemented, not executed (PRs #24 and #26): digest-based blue/green, S3 bundle, Systems Manager wrapper, rewritten `cd.yml` and `rollback.yml`; staging only, the production rolling deploy is not implemented |
 | RP6 staging deployment | Not started: no Environment, variable or secret, no operator bootstrap, no deployment, no live URL |
-| RP7 production gate and deployment | Not started. `cd.yml` has no production job and binds no `production` Environment, so no approval can be shown yet |
+| RP7 production gate and deployment | Approval gate implemented in code, NOT verified (updated 2026-11-23: PR #39 merged at `9682ec4`). `cd.yml` now has the job `production-approval`, bound to `environment: production`, after `gate` and `deploy-staging`; it deploys nothing (no permissions, no AWS access). The `production` Environment and its required reviewer are not configured (0 Environments) and CD has only ever been `skipped` (`CD_ENABLED` unset), so no real manual approval has been demonstrated. A production deploy job and production infrastructure are not implemented |
 | RP8 zero-downtime and rollback on AWS | Not started on AWS; local and offline evidence only |
 | RP9 Copilot and failures | Three deliberate failures run and recovered (runs 44884178546 / 44884710861, 44884809417 / 44885032635, 44920064307 / 44920708004; PR #28 stays open); write-ups on `main` (PR #29); the 13 screenshots are on `main` (PR #32). Copilot troubleshooting evidence UNAVAILABLE |
 | RP10 final documentation | README merged; the 13 Part H screenshots are on `main`; other screenshots, the final all-history gitleaks scan and the clean-clone dry run pending |
@@ -257,7 +257,7 @@ currently unproven. These bands are judgement, not measurements.
 ## 8a. Current blockers (2026-11-22)
 
 1. Instructor answers pending: SSM instead of the assignment's "over SSH" wording (D1) and the live-URL policy (D2). Neither is assumed.
-2. GitHub is unconfigured: 0 Environments, 0 variables, 0 secrets, `CD_ENABLED` unset; no `production` Environment, and `cd.yml` has no production job, so Part D's approval gate cannot be shown.
+2. GitHub is unconfigured: 0 Environments, 0 variables, 0 secrets, `CD_ENABLED` unset; no `production` Environment. `cd.yml` has the approval job `production-approval` (PR #39, code only, deploys nothing), but without the Environment and its required reviewer, and a run paused and approved in GitHub, Part D's approval gate cannot be shown.
 3. The real GitHub OIDC `sub` claim was never captured and whether an OIDC provider already exists in the AWS account is unknown, so the OIDC resources cannot be applied.
 4. A fresh `terraform plan` is required (the 2026-11-21 plan is stale), then explicit approval for the apply; the cost envelope (D5) and budget are not decided.
 5. Operator steps not done: the `db-app` and `db-owner` secrets, the host settings file, the database bootstrap. The first deploy is expected to stop at the migrator by design.
