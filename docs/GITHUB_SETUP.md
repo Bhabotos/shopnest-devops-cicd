@@ -40,7 +40,19 @@ Settings -> Actions -> General:
 - Do not delete workflow runs at any time (failed runs are graded evidence)
 
 ## 4. Environments and variables (Part D)
-**Current state (read 2026-11-22): 0 Environments, 0 secrets, 0 variables.** Creating any of the items below is a GitHub settings change and needs the user's explicit approval. Values are never written in the repository.
+**Current state (read back through the GitHub API on 2026-11-23): two Environments exist, `staging` (id 28213109031) and `production` (id 28213117188); 0 Actions secrets and 0 Actions variables at repository level and in both Environments; `CD_ENABLED` is unset.** The Environments were created by the repository owner's approval on 2026-11-23; nothing else below has been configured. Creating any further item below is a GitHub settings change and needs the user's explicit approval. Values are never written in the repository.
+
+Verified Environment configuration (API read-back, 2026-11-23):
+
+| Setting | `staging` | `production` |
+|---|---|---|
+| Deployment branches | selected branches: `main` only | selected branches: `main` only |
+| Required reviewers | none | `Bhabotos` (the repository owner) |
+| Prevent self-review | not applicable (no reviewer) | **OFF** (single maintainer; the owner must be able to approve) |
+| Administrators can bypass protection rules | `true` (GitHub's default, not changed; no reviewer to bypass) | **`false`** (changed on 2026-11-23 from the default `true`, read back independently) |
+| Variables / secrets | 0 / 0 | 0 / 0 |
+
+This is configuration only. It does **not** prove that a run pauses at "Waiting for review", that an approval works, or that anything was deployed: none of that has been tested.
 
 Settings -> Environments:
 | Environment | Protection | Used by |
@@ -73,13 +85,13 @@ Reference: `docs/AWS_STAGING_INTEGRATION.md` section 4.
 a successful `deploy-staging`. Its only action is to write a notice that nothing was deployed. It exists so that a production step is **held for a
 manual approval**; it does not deploy, because no production infrastructure or production deploy job exists.
 
-**Manual configuration (GitHub settings; none of it is done, and it needs the repository owner):**
-1. Create the `staging` Environment (deployment branches: `main` only).
-2. Create the `production` Environment with **Required reviewers** (the repo owner), **Deployment branches: `main` only**, and "Prevent self-review" OFF (single maintainer).
-3. Only then set the repository variable `CD_ENABLED`, and the `staging` variables from the table above. **Order matters:** if a workflow references an Environment that does not exist, GitHub creates it
+**Manual configuration (GitHub settings, needs the repository owner). Steps 1 and 2 were DONE on 2026-11-23 (see the table in this section); step 3 onwards is NOT done:**
+1. DONE: create the `staging` Environment (deployment branches: `main` only).
+2. DONE: create the `production` Environment with **Required reviewers** (the repo owner), **Deployment branches: `main` only**, "Prevent self-review" OFF (single maintainer) and "Allow administrators to bypass configured protection rules" OFF (otherwise the administrator, who is also the only reviewer, could skip the approval).
+3. NOT DONE: only then set the repository variable `CD_ENABLED`, and the `staging` variables from the table above. **Order matters:** if a workflow references an Environment that does not exist, GitHub creates it
    with **no protection rules**, and the approval job would run without waiting. Do not set `CD_ENABLED` before step 2.
 4. **Warning (UNVERIFIED behaviour):** because `production-approval` is bound to the `production` Environment, GitHub may record a deployment to `production` for it (the repository's Deployments view and the Environment's history) even though the job deploys nothing. The run summary says plainly that nothing was deployed. Check what GitHub shows during the test below, and do not present that entry as a production deployment in any evidence.
-5. Test it for real: run CD on `main`, confirm the run stops at "Production approval gate" with "Waiting for review", approve it, and keep the screenshots. Until that is done, **approval is not verified**.
+5. Test it for real (PENDING): run CD on `main`, confirm the run stops at "Production approval gate" with "Waiting for review", approve it, and keep the screenshots. Until that is done, **approval is not verified**. Note that `production-approval` needs a successful `deploy-staging`, which needs AWS (OIDC role, CodeBuild, Systems Manager): with no AWS resources the job is skipped and never reaches "Waiting for review". Setting `CD_ENABLED` without AWS would start a failing deploy attempt, so it must stay unset. A separate, non-AWS demonstration workflow is an option that has NOT been created and would need its own approval; it would prove the reviewer mechanism only, not the `cd.yml` chain.
 
 **OIDC subjects (immutable claims).** This repository's subject claim uses numeric IDs (GitHub's immutable-subject setting, read with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`).
 So the staging deploy job's subject is expected to look like `repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:staging`, not `repo:<owner>/<repo>:environment:staging`.
