@@ -1,0 +1,6 @@
+verify 2026-11-24T21:04:21Z
+PASS  frontend: GET / returns 200 and HTML
+PASS  backend: GET /health returns 200 with status ok
+PASS  security: GET /version is NOT exposed on the public origin (404; it stays internal)
+PASS  database: GET /api/products returns 200 and a non-empty catalogue (backend -> PostgreSQL)
+products answer (first 200 bytes): {"products":[{"id":1,"sku":"nest-tee","name":"Nest Cotton T-Shirt","description":"Soft everyday cotton tee.","price":{"amountMinor":79900,"currency":"BDT"},"imageUrl":"/images/nest-tee.svg","stock":40
