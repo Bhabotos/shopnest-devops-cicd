@@ -1,0 +1,30 @@
+ssh-deploy: deploy staging d25e808921d752ad361bcbd460aafedd2800b0a8; key SHA256:<masked> (public fingerprint)
+ssh-deploy: opening the SSM port-forwarding tunnel to the instance (local port 2222)
+ssh-deploy: tunnel is up
+ssh-deploy: pre-flight ok (tunnel, key, pinned host key and request accepted)
+ssh-deploy: running: shopnest-deploy --env staging --sha d25e808921d752ad361bcbd460aafedd2800b0a8 --image-ref ghcr.io/bhabotos/shopnest-backend@sha256:38346ed1b475c2efa123f7bd32f79c2123f5e7b3d9e506637d84851c81a9e38a --frontend-ref ghcr.io/bhabotos/shopnest-frontend@sha256:a76a171dfee01c4d26b06acff389cb2db031f03eb9485a60e7b3864c79b170fb --seed
+2026-11-24T20:11:29Z deploy d25e808921d752ad361bcbd460aafedd2800b0a8 to staging (bundle /opt/shopnest/incoming/d25e808921d752ad361bcbd460aafedd2800b0a8)
+2026-11-24T20:11:29Z lab mode: scripts are a git checkout of d25e808921d752ad361bcbd460aafedd2800b0a8; the images are pulled from GHCR by digest
+2026-11-24T20:11:33Z backend image shopnest-backend:d25e808921d752ad361bcbd460aafedd2800b0a8 pulled from GHCR by digest and its revision label matches
+2026-11-24T20:11:36Z frontend files for d25e808921d752ad361bcbd460aafedd2800b0a8 unpacked from the GHCR image (digest pinned, revision label matches)
+2026-11-24T20:11:36Z ensuring the database is up (it is never recreated or restarted by a deploy)
+ Container shopnest-staging-db-1  Running
+2026-11-24T20:11:36Z applying migrations (owner role; must stay compatible with the live release)
+no pending migrations
+2026-11-24T20:11:37Z seeding the demo catalogue (idempotent)
+seed complete
+2026-11-24T20:11:38Z release d25e808921d752ad361bcbd460aafedd2800b0a8 (deploy): live=green (11fc2c204c79bc52101bf149275be546f9eb7ce4), target colour=blue
+ Container shopnest-staging-backend-blue-1  Recreate
+ Container shopnest-staging-backend-blue-1  Recreated
+ Container shopnest-staging-backend-blue-1  Starting
+ Container shopnest-staging-backend-blue-1  Started
+2026-11-24T20:11:38Z waiting for backend-blue to report healthy and commit d25e808921d752ad361bcbd460aafedd2800b0a8
+2026-11-24T20:11:41Z backend-blue validated; switching traffic
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/11/24 20:11:42 [notice] 2051#2051: signal process started
+2026-11-24T20:11:42Z draining backend-green for 10s before stopping it
+2026-11-24T20:11:53Z release d25e808921d752ad361bcbd460aafedd2800b0a8 is live on blue
+2026-11-24T20:11:53Z DEPLOY SUCCEEDED: d25e808921d752ad361bcbd460aafedd2800b0a8 is live on staging
+ssh-deploy: the host answered with exit code 0
+ssh-deploy: CONFIRMED: d25e808921d752ad361bcbd460aafedd2800b0a8 is live in staging; images by digest sha256:38346ed1b475c2efa123f7bd32f79c2123f5e7b3d9e506637d84851c81a9e38a (backend) and sha256:a76a171dfee01c4d26b06acff389cb2db031f03eb9485a60e7b3864c79b170fb (frontend)
