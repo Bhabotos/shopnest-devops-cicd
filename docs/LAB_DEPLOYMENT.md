@@ -125,7 +125,7 @@ To look at staging (not public): `aws ssm start-session --target <instance id> -
 From your own machine, against the staging port forward (or the production URL), while a deploy runs:
 
 ```bash
-bash deploy/scripts/request-loop.sh --url "http://127.0.0.1:8081/health" --seconds 180 --interval 0.1 --log docs/evidence/zero-downtime/request-loop.log &
+bash deploy/scripts/request-loop.sh --url "http://127.0.0.1:8081/health" --version-url "http://127.0.0.1:8081/version" --seconds 180 --interval 0.1   --log docs/evidence/zero-downtime/request-loop.log --json docs/evidence/zero-downtime/summary.json &
 # merge a change to main, wait for the staging deploy to finish, then read the SUMMARY line
 ```
 

@@ -176,6 +176,14 @@ lacks "no private key marker in the output" "$T/stg.out" "BEGIN OPENSSH PRIVATE 
 after_cleanup "staging deploy"
 key_deleted "staging deploy"
 
+echo "== --preflight-only proves the path and starts nothing"
+check "exit code" "$(run pfo -- "${deploy_args[@]}" --preflight-only)" 0
+check "only the pre-flight --check was sent to the host" "$(wc -l < "$FAKE/ssh.remote" | tr -d ' ')" 1
+check "that one command is the check" "$(sed -n 1p "$FAKE/ssh.remote" | grep -c -- '--check$')" 1
+has "it says the real command was not sent" "$T/pfo.out" "the real command was NOT sent"
+lacks "it never claims a deployment" "$T/pfo.out" "CONFIRMED"
+after_cleanup "preflight-only"
+
 echo "== a deploy to production (no seed)"
 check "exit code" "$(run prod -- "${prod_args[@]}")" 0
 check "the real command names production and has no --seed" "$(sed -n 2p "$FAKE/ssh.remote")" "shopnest-deploy --env production --sha $SHA --image-ref $BACKEND --frontend-ref $FRONTEND"

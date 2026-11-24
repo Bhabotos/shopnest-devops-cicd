@@ -6,7 +6,7 @@
 #
 #   ssh-deploy.sh deploy   --environment <staging|production> --instance <i-...> --region <region> --sha <40-hex>
 #                          --image-ref <ghcr.io/OWNER/shopnest-backend@sha256:...> --frontend-ref <ghcr.io/OWNER/shopnest-frontend@sha256:...>
-#                          [--seed] [--local-port <port>] [--log-file <file>]
+#                          [--seed] [--local-port <port>] [--log-file <file>] [--preflight-only]
 #   ssh-deploy.sh rollback --environment <staging|production> --instance <i-...> --region <region> --sha <40-hex earlier release>
 #                          --carrier-sha <40-hex commit of main> [--local-port <port>] [--log-file <file>]
 #
@@ -16,6 +16,8 @@
 #                    StrictHostKeyChecking can stay "yes" and the first connection is not trusted blindly
 # The AWS credentials come from the environment too (the OIDC step of the workflow).
 #
+# --preflight-only stops after the pre-flight (nothing is started on the host): it proves the tunnel, the key, the pinned host key, the
+# key's environment binding and the argument check, which is what the ssh-preflight workflow uses.
 # What it does, in order: check the arguments, write the key and the known_hosts file to a private temporary directory, open the tunnel,
 # wait for it, run the wrapper's --check (proves the tunnel, the key, the pinned host key and the arguments before anything starts),
 # run the real command, confirm from the host's own output that THIS commit went live from THIS image digest, and then -- on every
@@ -36,7 +38,7 @@ ACTION="${1:-}"
 [ $# -eq 0 ] || shift
 case "$ACTION" in deploy | rollback) ;; *) usage_error "the first argument must be deploy or rollback" ;; esac
 
-ENVIRONMENT="" INSTANCE="" REGION="" SHA="" IMAGE_REF="" FRONTEND_REF="" CARRIER_SHA="" SEED=0 PORT=2222 LOG_FILE=""
+ENVIRONMENT="" INSTANCE="" REGION="" SHA="" IMAGE_REF="" FRONTEND_REF="" CARRIER_SHA="" SEED=0 PORT=2222 LOG_FILE="" PREFLIGHT_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --environment) needs_value "$@"; ENVIRONMENT="$2"; shift 2 ;;
@@ -47,6 +49,7 @@ while [ $# -gt 0 ]; do
     --frontend-ref) needs_value "$@"; FRONTEND_REF="$2"; shift 2 ;;
     --carrier-sha) needs_value "$@"; CARRIER_SHA="$2"; shift 2 ;;
     --seed) SEED=1; shift ;;
+    --preflight-only) PREFLIGHT_ONLY=1; shift ;;
     --local-port) needs_value "$@"; PORT="$2"; shift 2 ;;
     --log-file) needs_value "$@"; LOG_FILE="$2"; shift 2 ;;
     *) usage_error "unknown argument: $1" ;;
@@ -192,6 +195,11 @@ if [ "$check_ok" != 1 ]; then
   exit 4
 fi
 emit "ssh-deploy: pre-flight ok (tunnel, key, pinned host key and request accepted)"
+if [ "$PREFLIGHT_ONLY" = 1 ]; then
+  # A diagnostic: everything up to the point where the real command would start has been proven, and nothing was started on the host.
+  emit "ssh-deploy: --preflight-only: the real command was NOT sent; nothing was started or changed on the host"
+  exit 0
+fi
 
 emit "ssh-deploy: running: ${REMOTE}"
 ssh_run "$REMOTE" 2>&1 | tee -a "$SESSION_LOG"

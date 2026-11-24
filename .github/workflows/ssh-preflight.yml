@@ -1,0 +1,120 @@
+name: ssh-preflight
+
+# A diagnostic that DEPLOYS NOTHING. It proves, for the chosen Environment, everything a deploy needs up to the moment the real command
+# would start: the GitHub OIDC token is accepted by AWS, the Environment's role opens a Systems Manager port-forwarding session to the lab
+# instance, SSH through that tunnel works with the Environment's key against the PINNED host key, the key's forced command is bound to
+# this Environment, and the host's wrapper accepts the request format (`--check`). It uses the same script as cd.yml
+# (deploy/ci/ssh-deploy.sh --preflight-only), with placeholder commit and image values that only have to be well formed.
+#
+# Manual start only, from main only, and it does not need CD_ENABLED. A production run is held for the production reviewer like a deploy.
+# `simulate: wrong-host-key` is a SAFE deliberate failure for the Part H demonstration: the job replaces the pinned host key with a throwaway
+# key it generates, so strict host-key checking must refuse the connection (the pre-flight fails, exit 4) and nothing is started anywhere.
+#
+# Settings read from the chosen Environment: secret DEPLOY_SSH_KEY; variables AWS_ROLE_ARN, AWS_REGION, LAB_INSTANCE_ID, SSH_HOST_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to check (production is held for its reviewer)
+        type: choice
+        required: true
+        options: [staging, production]
+      simulate:
+        description: Deliberate, harmless failure for the Part H demonstration
+        type: choice
+        required: true
+        default: none
+        options: [none, wrong-host-key]
+
+# No default token permissions: the job declares exactly what it needs.
+permissions: {}
+
+jobs:
+  preflight:
+    name: Pre-flight (${{ inputs.environment }}, simulate ${{ inputs.simulate }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      # One lab instance: this never overlaps a deploy or a rollback.
+      group: deploy-lab
+      cancel-in-progress: false
+    env:
+      TARGET_ENV: ${{ inputs.environment }}
+      SIMULATE: ${{ inputs.simulate }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      LAB_INSTANCE_ID: ${{ vars.LAB_INSTANCE_ID }}
+      SSH_HOST_KEY: ${{ vars.SSH_HOST_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the settings
+        run: |
+          set -euo pipefail
+          for name in AWS_REGION LAB_INSTANCE_ID SSH_HOST_KEY; do
+            [ -n "${!name}" ] || { echo "::error::$name is not set (a variable of the ${TARGET_ENV} Environment)"; exit 1; }
+          done
+      - name: Replace the pinned host key with a throwaway one (only for the deliberate failure)
+        if: inputs.simulate == 'wrong-host-key'
+        run: |
+          set -euo pipefail
+          ssh-keygen -q -t ed25519 -N '' -C 'throwaway-wrong-host-key' -f "$RUNNER_TEMP/wrong-host-key"
+          echo "SSH_HOST_KEY=$(cut -d' ' -f1,2 "$RUNNER_TEMP/wrong-host-key.pub")" >> "$GITHUB_ENV"
+          echo "::notice::simulate=wrong-host-key: the pinned host key is replaced by a throwaway key, so the pre-flight is EXPECTED to fail."
+      # Installed BEFORE the AWS credentials exist: the package is only a checksum-verified download, and it never runs with them.
+      - name: Install the Session Manager plugin (pinned version, checksum verified)
+        run: bash deploy/ci/install-ssm-plugin.sh
+      - name: Configure AWS credentials (OIDC, short-lived)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 1800
+          mask-aws-account-id: true
+      - name: Pre-flight through the SSM tunnel (nothing is started on the host)
+        id: preflight
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -uo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          # Placeholder values: --preflight-only never sends the real command, the host's --check only validates their format.
+          zero40="$(printf '%040d' 0)"
+          zero64="$(printf '%064d' 0)"
+          rc=0
+          bash deploy/ci/ssh-deploy.sh deploy --preflight-only --environment "$TARGET_ENV" --instance "$LAB_INSTANCE_ID" --region "$AWS_REGION" \
+            --sha "$zero40" --image-ref "ghcr.io/${owner}/shopnest-backend@sha256:${zero64}" --frontend-ref "ghcr.io/${owner}/shopnest-frontend@sha256:${zero64}" \
+            --log-file preflight-log.txt || rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$SIMULATE" = wrong-host-key ]; then
+            if [ "$rc" -eq 0 ]; then echo "::error::The deliberate wrong host key was ACCEPTED: strict host-key checking is not working."; exit 1; fi
+            echo "::notice::The pre-flight failed with exit $rc, as the deliberate failure intends."
+            exit "$rc"
+          fi
+          [ "$rc" -eq 0 ] || echo "::error::The pre-flight failed (exit $rc): see the log above."
+          exit "$rc"
+      - name: Make sure no tunnel is left behind
+        if: always()
+        run: pkill -f AWS-StartPortForwardingSession || true
+      - name: Upload the pre-flight log
+        if: always() && hashFiles('preflight-log.txt') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preflight-log-${{ inputs.environment }}-${{ github.run_id }}
+          path: preflight-log.txt
+          retention-days: 30
+      - name: Summary
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.preflight.outputs.exit_code }}
+        run: |
+          {
+            echo "### SSH pre-flight (${TARGET_ENV}, simulate ${SIMULATE})"
+            echo "- Result code: \`${EXIT_CODE:-not reached}\` (0 = the whole path up to the real command works; 4 = refused or unreachable)"
+            echo "- Nothing was started, deployed or changed on the host."
+          } >> "$GITHUB_STEP_SUMMARY"

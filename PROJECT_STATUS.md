@@ -18,6 +18,8 @@ Nothing is deployed. `CD_ENABLED` is unset, so every CD run is `skipped`, and `c
 | AWS STS role assumption, production | **PENDING**: run [45432917228](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45432917228) is waiting for the production reviewer |
 | Environment configuration | **VERIFIED by name through the API (2026-11-24)**: both Environments have `AWS_ROLE_ARN`, `AWS_REGION`, `LAB_INSTANCE_ID`, `SSH_HOST_KEY` and the secret `DEPLOY_SSH_KEY`; both restrict deployments to `main`; production requires reviewer `Bhabotos` with administrator bypass off; staging has no reviewer and administrator bypass **on** |
 | The EC2 instance, its security group (TCP 80 only), SSM registration, the two deploy roles | **VERIFIED read-only (2026-11-24)** |
+| `ssh-preflight` workflow (OIDC -> SSM tunnel -> SSH with the pinned host key -> forced command -> wrapper `--check`; deploys nothing) and the `--simulate wrong-host-key` failure for Part H | IMPLEMENTED, NOT EXECUTED: run it for staging before the first deploy |
+| `request-loop.sh` (Part F evidence tool: requests, failures, timeouts, latency percentiles, version-change log, JSON) | IMPLEMENTED, tested against a throwaway server (`request-loop.test.sh`), NOT used on a real deploy yet |
 | Host prerequisites on the instance (`setup-deploy-host.sh` applied, `/var/lib/shopnest` mode, wrappers, keys) | **NOT VERIFIED**: not recorded in the repository; the first deploy fails closed (exit 4) if they are missing |
 
 ## Assignment parts (judgement, not a grade)
@@ -35,11 +37,11 @@ Nothing is deployed. `CD_ENABLED` is unset, so every CD run is `skipped`, and `c
 Deliberate (Part H): 44884178546, 44884809417, 44920064307. Accidental: 44864872114, 44916673865, and 45444399255 (a ShellCheck failure on PR #48, fixed in the next commit).
 
 ## Blockers and the next actions
-1. Owner: approve or cancel production STS run 45432917228.
+1. Owner: re-authenticate AWS (`aws login --profile devops`; the session expired) so the host read-back can run, and approve or cancel production STS run 45432917228.
 2. Owner approval: enable `CD_ENABLED` and run the first real **staging** deploy (production only after staging passes and with the reviewer).
-3. On the instance: `sudo bash deploy/host/setup-deploy-host.sh --verify` (read-only) and the `stat` check in [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md#host-prerequisites-once-on-the-instance-as-root).
+3. Run `ssh-preflight` for staging, and on the instance `sudo bash deploy/host/readiness-check.sh` (read-only). The full list is [`docs/PRE_DEPLOYMENT_CHECKLIST.md`](docs/PRE_DEPLOYMENT_CHECKLIST.md).
 4. After the first deploy: zero-downtime request loop, then a deliberately unhealthy **staging** release (automatic rollback) and a manual rollback.
-5. Owner: GitHub Copilot exercise for Part H (prompts, outputs, changes, failed run URLs, screenshots).
+5. Owner: the GitHub Copilot exercise for Part H, step by step in [`docs/COPILOT_EXERCISE.md`](docs/COPILOT_EXERCISE.md) (one prompt, three safe failures, exact evidence).
 
 ## Open decisions
 Staging administrator bypass (currently on); the live URL in the README (D2); screenshots to commit.
