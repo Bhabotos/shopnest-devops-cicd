@@ -329,10 +329,46 @@ bg_color_ready() { # <colour> <sha>
 
 bg_nginx_get() { bg_compose exec -T nginx wget -q -O - "http://127.0.0.1:8081$1"; }
 
+# ---- staging-only, one-shot fault injection (the Part G demonstration of the AUTOMATIC rollback) -----------------------------------
+# The owner arms it with a Session Manager session on the instance: a file /opt/shopnest/staging/fault.env that is owned by root, not
+# writable by group or others, and holds exactly the line  FAULT=post-switch-unhealthy.  The NEXT staging DEPLOY consumes it: the file is
+# deleted first, and the post-switch verification of THAT release (and only that release) is reported as failed, so the real automatic
+# rollback runs: traffic is returned to the previous release, which is verified again. Nothing is actually broken and real traffic never
+# sees a broken backend. The rules, each tested in deploy/tests/lab-mode.test.sh:
+#   * production never reads the file (the function returns before it looks): only BG_ENV=staging in lab mode;
+#   * only a deploy arms it: a rollback never does, and the file is left untouched;
+#   * only when a previous release exists to fall back to (the very first deploy is never sabotaged);
+#   * only a plain root-owned file with the exact content; anything else is ignored, logged and left in place;
+#   * it is consumed (removed) when armed; if it cannot be removed it is NOT armed.
+# BG_FAULT_OWNER_UID (default 0) exists for the offline tests, which do not run as root; on the instance the deploy runs through sudo, which
+# discards the caller's environment, so it cannot be set there.
+BG_FAULT_SHA=""
+bg_fault_arm() { # <sha> <note> <previous colour>
+  local f="$BG_ENV_DIR/fault.env" owner="${BG_FAULT_OWNER_UID:-0}" mode
+  BG_FAULT_SHA=""
+  [ "$BG_ENV" = staging ] && [ "$BG_DB_MODE" = lab ] || return 0
+  { [ -e "$f" ] || [ -L "$f" ]; } || return 0
+  if [ "$2" != deploy ]; then bg_log "fault file present, but this is a $2 and not a deploy: left untouched, not armed"; return 0; fi
+  if [ -z "$3" ]; then bg_log "fault file present, but there is no previous release to fall back to: left untouched, not armed"; return 0; fi
+  if [ -L "$f" ] || [ ! -f "$f" ]; then bg_log "fault file ignored: it is not a plain file"; return 0; fi
+  if [ "$(stat -c %u "$f" 2> /dev/null)" != "$owner" ]; then bg_log "fault file ignored: it is not owned by root"; return 0; fi
+  mode="$(stat -c %a "$f" 2> /dev/null)"
+  if [ $((8#${mode:-777} & 8#022)) -ne 0 ]; then bg_log "fault file ignored: it is writable by group or others"; return 0; fi
+  if [ "$(head -c 64 "$f" | tr -d '\r')" != "FAULT=post-switch-unhealthy" ] || [ "$(wc -l < "$f" | tr -d ' ')" -gt 1 ]; then
+    bg_log "fault file ignored: its content is not exactly FAULT=post-switch-unhealthy"
+    return 0
+  fi
+  if ! rm -f "$f" || [ -e "$f" ]; then bg_log "fault file could not be removed: NOT armed"; return 0; fi
+  BG_FAULT_SHA="$1"
+  bg_log "FAULT INJECTION (staging test): armed for release $1; the fault file is consumed and removed; its post-switch verification will be reported as FAILED"
+}
+
 # Live check, as traffic sees it: through nginx (health and commit), and through the published port
 # when curl is available on the host (health and the frontend index).
 bg_live_check() { # <sha>
   local body
+  # The injected fault applies to the release it was armed for, never to the previous release that traffic is returned to.
+  if [ -n "${BG_FAULT_SHA:-}" ] && [ "$BG_FAULT_SHA" = "$1" ]; then return 1; fi
   body="$(bg_nginx_get /health)" || return 1
   [[ "$body" == *'"status":"ok"'* ]] || return 1
   body="$(bg_nginx_get /version)" || return 1
@@ -403,8 +439,10 @@ bg_release() {
   fi
   printf '%s\n' "$idle" > "$BG_STATE_DIR/active"
 
+  bg_fault_arm "$sha" "$note" "$prev"
   if ! bg_retry "${LIVE_ATTEMPTS:-10}" "${LIVE_INTERVAL:-1}" bg_live_check "$sha"; then
     bg_log "post-switch verification FAILED; returning traffic to the previous release"
+    if [ -n "$BG_FAULT_SHA" ]; then bg_log "this failure was INJECTED by the staging fault file (a test); the automatic rollback below is the real one"; fi
     if [ -n "$prev" ]; then
       restored=0
       if bg_switch "$prev" "$prev_sha"; then
