@@ -137,6 +137,7 @@ Zero downtime may be claimed only if the summary reads `failed=0` for a deploy t
 - Both environments run on 2 GiB of memory (a 1 GiB swap file is added). Not measured under load.
 - HTTP only, no domain, no certificate.
 - GHCR packages are public, so the images are public.
+- Public Actions logs show the instance id (in each step's `env:` header) and, once, the role ARN with the AWS account id (in the credentials action's `with:` echo, before it can mask the id). Credentials are masked (`***`). None of this is a credential, but it is visible in a public repository.
 - The deploy scripts run as root from a checkout of the repository at the commit: whoever can change `main` can change what a deploy executes. Branch protection and the production reviewer are the real controls.
 - The key-to-Environment binding is the forced command in `authorized_keys`; the sudoers rule names two fixed paths but no arguments, so a local shell as the `deploy` user (not reachable through the restricted keys) could name either Environment.
 - The Session Manager plugin is pinned by version and SHA-256, but the checksum was taken from one HTTPS download and AWS's detached PGP signature was not verified.
