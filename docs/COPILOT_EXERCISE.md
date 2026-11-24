@@ -30,6 +30,15 @@ Check it first: `docker run --rm -v "$PWD/.github/workflows:/wf:ro" rhysd/action
 
 The exercise below therefore produces **three fresh deliberate failures with Copilot's troubleshooting**, distinct from each other and safe (nothing merged into `main`, nothing near production).
 
+### 2b. Can PR #28 be one of the three demonstrations?
+**Yes, as the deliberate automated-test failure, with Copilot evidence still missing.** PR #28 (branch `test/failing-config-default-port`, run [44920064307](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920064307)) is deliberate, isolated, never merged, and has a kept failed run, a green recovery run [44920708004](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/44920708004), the fix commit `5472d40`, and screenshots in `docs/screenshots/part-h/` (failed run, test log, fix commit, recovered run, PR open and marked DO NOT MERGE). What is **missing** for it to count as Copilot-assisted debugging:
+1. the Copilot troubleshooting **prompt** and Copilot's **verbatim answer** (none was recorded; the owner could not recall which failure Copilot covered);
+2. a **screenshot of that Copilot interaction**;
+3. the root cause in your own words, tied to Copilot's answer (the existing write-up in `docs/failures/PART_H_FAILURES.md` was not produced with a recorded Copilot session);
+4. a screenshot of the **blocked merge** (it cannot be recreated: the checks on PR #28 are green now).
+
+Two honest options. **A (recommended):** do the fresh scenario 2 above, which produces all of this contemporaneously. **B (retrospective):** open Copilot Chat now, give it the *preserved* failing log of run 44920064307 and the diff of the failing commit (`git diff a3282f4~1 a3282f4`), save the prompt, the answer and a screenshot dated today, and say in the README that it was done **after the fact on a preserved failure**; use this only if your instructor accepts retrospective evidence, and never present it as contemporaneous. The same applies to the other two earlier deliberate failures (44884178546, 44884809417).
+
 ## 3. The three failure scenarios
 Rules for all three: a dedicated branch or the staging-only diagnostic; **never merge a deliberately broken change into `main`**; nothing touches production; never delete a failed run. For each, save: the failed run URL, a screenshot of the failing step with the exact error, your Copilot prompt and Copilot's answer (verbatim), the root cause in your own words, the fix, the fix commit (or corrected dispatch), and the green run URL with a screenshot.
 

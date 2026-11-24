@@ -329,23 +329,33 @@ bg_color_ready() { # <colour> <sha>
 
 bg_nginx_get() { bg_compose exec -T nginx wget -q -O - "http://127.0.0.1:8081$1"; }
 
-# ---- staging-only, one-shot fault injection (the Part G demonstration of the AUTOMATIC rollback) -----------------------------------
-# The owner arms it with a Session Manager session on the instance: a file /opt/shopnest/staging/fault.env that is owned by root, not
-# writable by group or others, and holds exactly the line  FAULT=post-switch-unhealthy.  The NEXT staging DEPLOY consumes it: the file is
-# deleted first, and the post-switch verification of THAT release (and only that release) is reported as failed, so the real automatic
-# rollback runs: traffic is returned to the previous release, which is verified again. Nothing is actually broken and real traffic never
-# sees a broken backend. The rules, each tested in deploy/tests/lab-mode.test.sh:
-#   * production never reads the file (the function returns before it looks): only BG_ENV=staging in lab mode;
+# ---- staging-only, one-shot fault injection (the Part G demonstrations of the AUTOMATIC rollback) ---------------------------------------
+# The owner arms ONE of two faults with a Session Manager session on the instance: a file /opt/shopnest/staging/fault.env that is owned by
+# root, not writable by group or others, and holds exactly one line:
+#   FAULT=post-switch-unhealthy        the post-switch verification of that release is reported as failed (a SIMULATED failure: the new
+#                                      release is actually healthy; the real rollback logic runs; users never meet a broken backend);
+#   FAULT=backend-unhealthy-pre-switch the new colour's container is really FROZEN (docker pause) right after it starts, so its health
+#                                      checks genuinely fail; the existing pre-switch rejection runs, traffic never moves, the previous
+#                                      release keeps serving (a REAL broken backend, no user impact).
+# The NEXT staging DEPLOY consumes it (the file is deleted first). The rules, each tested in deploy/tests/lab-mode.test.sh:
+#   * production never reads the file (the code returns before it looks): only BG_ENV=staging in lab mode;
 #   * only a deploy arms it: a rollback never does, and the file is left untouched;
 #   * only when a previous release exists to fall back to (the very first deploy is never sabotaged);
-#   * only a plain root-owned file with the exact content; anything else is ignored, logged and left in place;
-#   * it is consumed (removed) when armed; if it cannot be removed it is NOT armed.
+#   * only a plain root-owned file with exactly one of the two lines; anything else is ignored, logged and left in place;
+#   * it is consumed (removed) when armed; if it cannot be removed it is NOT armed;
+#   * only the IDLE colour of the deploy in progress is ever frozen, never the release that is serving.
 # BG_FAULT_OWNER_UID (default 0) exists for the offline tests, which do not run as root; on the instance the deploy runs through sudo, which
 # discards the caller's environment, so it cannot be set there.
 BG_FAULT_SHA=""
-bg_fault_arm() { # <sha> <note> <previous colour>
-  local f="$BG_ENV_DIR/fault.env" owner="${BG_FAULT_OWNER_UID:-0}" mode near
-  BG_FAULT_SHA=""
+BG_FAULT_FROZEN=""
+BG_FAULT_MODE=""
+BG_FAULT_CHECKED=""
+# bg_fault_check <note> <previous colour>: looks once per run and sets BG_FAULT_MODE to the validated mode, or "" when nothing valid is armed.
+bg_fault_check() {
+  local f="$BG_ENV_DIR/fault.env" owner="${BG_FAULT_OWNER_UID:-0}" mode content near
+  [ -z "$BG_FAULT_CHECKED" ] || return 0
+  BG_FAULT_CHECKED=1
+  BG_FAULT_MODE=""
   [ "$BG_ENV" = staging ] && [ "$BG_DB_MODE" = lab ] || return 0
   if ! { [ -e "$f" ] || [ -L "$f" ]; }; then
     # A silent "nothing armed" cannot be told apart from a hook that did not run (found on the first real attempt). Staging deploys therefore
@@ -355,17 +365,38 @@ bg_fault_arm() { # <sha> <note> <previous colour>
     bg_log "fault injection: no fault file at $f, not armed${near:+; found instead (NOT used): $near}"
     return 0
   fi
-  if [ "$2" != deploy ]; then bg_log "fault file present, but this is a $2 and not a deploy: left untouched, not armed"; return 0; fi
-  if [ -z "$3" ]; then bg_log "fault file present, but there is no previous release to fall back to: left untouched, not armed"; return 0; fi
+  if [ "$1" != deploy ]; then bg_log "fault file present, but this is a $1 and not a deploy: left untouched, not armed"; return 0; fi
+  if [ -z "$2" ]; then bg_log "fault file present, but there is no previous release to fall back to: left untouched, not armed"; return 0; fi
   if [ -L "$f" ] || [ ! -f "$f" ]; then bg_log "fault file ignored: it is not a plain file"; return 0; fi
   if [ "$(stat -c %u "$f" 2> /dev/null)" != "$owner" ]; then bg_log "fault file ignored: it is not owned by root"; return 0; fi
   mode="$(stat -c %a "$f" 2> /dev/null)"
   if [ $((8#${mode:-777} & 8#022)) -ne 0 ]; then bg_log "fault file ignored: it is writable by group or others"; return 0; fi
-  if [ "$(head -c 64 "$f" | tr -d '\r')" != "FAULT=post-switch-unhealthy" ] || [ "$(wc -l < "$f" | tr -d ' ')" -gt 1 ]; then
-    bg_log "fault file ignored: its content is not exactly FAULT=post-switch-unhealthy"
-    return 0
-  fi
-  if ! rm -f "$f" || [ -e "$f" ]; then bg_log "fault file could not be removed: NOT armed"; return 0; fi
+  content="$(head -c 64 "$f" | tr -d '\r')"
+  if [ "$(wc -l < "$f" | tr -d ' ')" -gt 1 ]; then content=""; fi
+  case "$content" in
+    FAULT=post-switch-unhealthy | FAULT=backend-unhealthy-pre-switch) BG_FAULT_MODE="${content#FAULT=}" ;;
+    *) bg_log "fault file ignored: its content is not exactly one of the two accepted lines" ;;
+  esac
+}
+# bg_fault_consume: remove the fault file; false (and nothing armed) when it cannot be removed.
+bg_fault_consume() {
+  local f="$BG_ENV_DIR/fault.env"
+  if ! rm -f "$f" || [ -e "$f" ]; then bg_log "fault file could not be removed: NOT armed"; BG_FAULT_MODE=""; return 1; fi
+}
+# Before the readiness wait: the REAL fault. Freezes the idle colour so its health checks genuinely fail.
+bg_fault_pre() { # <idle colour> <sha> <note> <previous colour>
+  bg_fault_check "$3" "$4"
+  [ "$BG_FAULT_MODE" = backend-unhealthy-pre-switch ] || return 0
+  bg_fault_consume || return 0
+  BG_FAULT_FROZEN="$1"
+  bg_log "FAULT INJECTION (staging test): armed for release $2; the fault file is consumed and removed; backend-$1 is now FROZEN (docker pause), so its health checks will really fail and traffic must not move"
+  bg_compose pause "backend-$1" > /dev/null 2>&1 || bg_log "warning: could not freeze backend-$1: no fault was applied"
+}
+# After the switch: the SIMULATED fault. Reports the post-switch verification of this release as failed.
+bg_fault_arm() { # <sha> <note> <previous colour>
+  bg_fault_check "$2" "$3"
+  [ "$BG_FAULT_MODE" = post-switch-unhealthy ] || return 0
+  bg_fault_consume || return 0
   BG_FAULT_SHA="$1"
   bg_log "FAULT INJECTION (staging test): armed for release $1; the fault file is consumed and removed; its post-switch verification will be reported as FAILED"
 }
@@ -420,9 +451,11 @@ bg_release() {
     return 1
   fi
 
+  bg_fault_pre "$idle" "$sha" "$note" "$prev"
   bg_log "waiting for backend-$idle to report healthy and commit $sha"
   if ! bg_retry "${READY_ATTEMPTS:-30}" "${READY_INTERVAL:-2}" bg_color_ready "$idle" "$sha"; then
     bg_log "validation FAILED for backend-$idle; traffic was NOT moved"
+    if [ -n "$BG_FAULT_FROZEN" ]; then bg_log "this failure was CAUSED by the staging fault file (a test): backend-$idle was frozen on purpose, so it really could not answer"; fi
     bg_compose logs --no-color --tail 40 "backend-$idle" || true
     bg_abort_idle "$idle" "$old_idle_tag"
     bg_history failed "$sha" "pre-switch validation failed; live release unchanged"

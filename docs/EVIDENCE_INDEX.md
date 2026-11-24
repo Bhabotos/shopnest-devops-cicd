@@ -1,6 +1,6 @@
 # Evidence index (verified)
 
-Every run below was looked up through the GitHub API on **2026-11-25**: it exists, and its workflow, event, conclusion and commit are as listed. URL pattern: `https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/<id>`. Failed and cancelled runs are graded evidence and are **never deleted**. Evidence of Claude's own activity is never presented as GitHub Copilot evidence.
+Every run below (all 36 run links in the README, `PROJECT_STATUS.md` and the docs, re-verified on **2026-11-25 at about 03:41 +0600**; the pull-request links too) was looked up through the GitHub API: it exists, and its workflow, event, conclusion and commit are as listed. URL pattern: `https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/<id>`. Failed and cancelled runs are graded evidence and are **never deleted**. Evidence of Claude's own activity is never presented as GitHub Copilot evidence.
 
 ## Final staging state (at the time of writing)
 | Item | Result |
@@ -11,7 +11,7 @@ Every run below was looked up through the GitHub API on **2026-11-25**: it exist
 
 Every merge to `main` deploys to staging while `CD_ENABLED=true`, so the commit above is the newest one at the time of writing; the run list shows later ones.
 
-## Verified runs (34 referenced in the documentation, all found)
+## Verified runs (the main table; the failed runs are in the next table)
 | Run | Workflow | Event | Result | Commit | Purpose |
 |---|---|---|---|---|---|
 | 44714705352 | CI | pull_request | success | `da55851` | PR run, Node 22 and 24 |
