@@ -311,7 +311,7 @@ check("staging-verify.yml: no expression is expanded inside a script and no shel
 check("cd.yml: staging and production deploy jobs are in DIFFERENT groups, so a production job waiting for its reviewer cannot block a staging deploy", cd["jobs"]["deploy-staging"]["concurrency"]["group"] == "deploy-lab-staging" and cd["jobs"]["deploy-production"]["concurrency"]["group"] == "deploy-lab-production")
 check("staging-verify.yml: runs in its OWN concurrency group, so it can run while a deploy is in progress", (sv_job.get("concurrency") or {}).get("group") == "staging-verify")
 check("staging-verify.yml: the tunnel is always ended (session terminated, process group killed) and the evidence uploaded even on failure", "terminate-session" in sv_code and 'kill -TERM -- "-$TUNNEL_PID"' in sv_code and any("upload-artifact" in str(s.get("uses", "")) and "always()" in str(s.get("if", "")) for s in sv_steps))
-check("staging-verify.yml: traffic mode uses request-loop.sh with a version URL and a JSON summary", "deploy/scripts/request-loop.sh" in sv_code and "--version-url" in sv_code and "--json" in sv_code)
+check("staging-verify.yml: traffic mode uses request-loop.sh with a JSON summary, and verify mode asserts /version is NOT exposed publicly", "deploy/scripts/request-loop.sh" in sv_code and "--json" in sv_code and "version_hidden" in sv_code and "expected_sha" not in sv_code)
 
 print()
 print(f"workflow checks: {passes} passed, {len(failures)} failed")
