@@ -244,7 +244,7 @@ FAKECURL
   rbrun() { # rbrun <deploy|rollback> <status GitHub gives the carrier (rollback) or ignored> <status GitHub gives the target>: prints the exit code
     : > "$T/rb.curl.log"
     : > "$T/rb.bash.log"
-    RB_CURL_LOG="$T/rb.curl.log" RB_BASH_LOG="$T/rb.bash.log" RB_CARRIER="$SHA2" RB_TARGET="$SHA" RB_CARRIER_STATUS="$2" RB_TARGET_STATUS="$3" \
+    env RB_CURL_LOG="$T/rb.curl.log" RB_BASH_LOG="$T/rb.bash.log" RB_CARRIER="$SHA2" RB_TARGET="$SHA" RB_CARRIER_STATUS="$2" RB_TARGET_STATUS="$3" \
       PATH="$T/rbin:$PATH" REPOSITORY=Example/example MODE="$1" SHA="$SHA" CARRIER_SHA="$SHA2" ENV_NAME=staging IMAGE_REF=img FRONTEND_REF=fe SEED=0 \
       bash -c 'die() { exit 2; }; fail() { exit 4; }; checkout() { :; }; bash() { echo "$*" >> "$RB_BASH_LOG"; }; eval "$1"; rc=0; eval "$2"; exit "$rc"' _ "$VOM2" "$RB_BLOCK" > /dev/null 2>&1
     echo $?
