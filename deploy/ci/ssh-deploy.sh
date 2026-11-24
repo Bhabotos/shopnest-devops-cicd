@@ -30,6 +30,7 @@ set -uo pipefail
 set +x
 
 usage_error() { echo "ssh-deploy: ERROR: $*" >&2; exit 2; }
+needs_value() { [ "$#" -ge 2 ] || usage_error "$1 needs a value"; } # needs_value "$@": the option is followed by something
 
 ACTION="${1:-}"
 [ $# -eq 0 ] || shift
@@ -38,16 +39,16 @@ case "$ACTION" in deploy | rollback) ;; *) usage_error "the first argument must 
 ENVIRONMENT="" INSTANCE="" REGION="" SHA="" IMAGE_REF="" FRONTEND_REF="" CARRIER_SHA="" SEED=0 PORT=2222 LOG_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --environment) ENVIRONMENT="${2:-}"; shift 2 ;;
-    --instance) INSTANCE="${2:-}"; shift 2 ;;
-    --region) REGION="${2:-}"; shift 2 ;;
-    --sha) SHA="${2:-}"; shift 2 ;;
-    --image-ref) IMAGE_REF="${2:-}"; shift 2 ;;
-    --frontend-ref) FRONTEND_REF="${2:-}"; shift 2 ;;
-    --carrier-sha) CARRIER_SHA="${2:-}"; shift 2 ;;
+    --environment) needs_value "$@"; ENVIRONMENT="$2"; shift 2 ;;
+    --instance) needs_value "$@"; INSTANCE="$2"; shift 2 ;;
+    --region) needs_value "$@"; REGION="$2"; shift 2 ;;
+    --sha) needs_value "$@"; SHA="$2"; shift 2 ;;
+    --image-ref) needs_value "$@"; IMAGE_REF="$2"; shift 2 ;;
+    --frontend-ref) needs_value "$@"; FRONTEND_REF="$2"; shift 2 ;;
+    --carrier-sha) needs_value "$@"; CARRIER_SHA="$2"; shift 2 ;;
     --seed) SEED=1; shift ;;
-    --local-port) PORT="${2:-}"; shift 2 ;;
-    --log-file) LOG_FILE="${2:-}"; shift 2 ;;
+    --local-port) needs_value "$@"; PORT="$2"; shift 2 ;;
+    --log-file) needs_value "$@"; LOG_FILE="$2"; shift 2 ;;
     *) usage_error "unknown argument: $1" ;;
   esac
 done

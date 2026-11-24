@@ -34,7 +34,7 @@ esac
 
 SHOPNEST_ROOT=/opt/shopnest
 CONF_FILE=/etc/shopnest/release.conf
-LOCK_FILE=/run/lock/shopnest-release.lock
+LOCK_FILE=/var/lib/shopnest/release.lock # a root-controlled directory (not /run/lock, which is world-writable)
 
 die() { echo "$SELF: ERROR: $*" >&2; exit 2; }  # the request is refused; nothing was started
 fail() { echo "$SELF: ERROR: $*" >&2; exit 4; } # the host is not in a safe state; nothing was changed
@@ -129,14 +129,17 @@ validate() {
   fi
 }
 
-# verify_on_main <sha>: GitHub must report the commit as identical to, or an ancestor of, main. Fails closed (no answer, no run).
+# verify_on_main <sha> [tip]: GitHub must report the commit as identical to, or an ancestor of, main. With "tip" only "identical"
+# is accepted: the commit must be the current tip of main (used for the rollback carrier, whose scripts run as root). Fails closed
+# (no answer, no run).
 verify_on_main() {
   local body status
   body="$(curl --fail --silent --show-error --max-time 30 -H 'Accept: application/vnd.github+json' \
     "https://api.github.com/repos/${REPOSITORY}/compare/main...$1")" || fail "could not ask GitHub whether $1 is part of main"
   status="$(printf '%s' "$body" | python3 -I -c 'import json, sys; print(json.load(sys.stdin).get("status", ""))')" || fail "unreadable answer from GitHub"
   case "$status" in
-    identical | behind) ;;
+    identical) ;;
+    behind) [ "${2:-}" != tip ] || die "commit $1 is not the current tip of main (GitHub reports '$status'): a rollback must be started from the latest main" ;;
     *) die "commit $1 is not part of the history of main (GitHub reports '$status')" ;;
   esac
 }
@@ -164,6 +167,7 @@ fi
 assert_protected "$0"
 assert_protected "$SHOPNEST_ROOT"
 [ -f /var/lib/shopnest/bootstrap-complete ] || fail "the host bootstrap has not completed (see /var/lib/shopnest/bootstrap-failed)"
+assert_protected "$(dirname "$LOCK_FILE")"
 exec 9> "$LOCK_FILE"
 flock -n 9 || fail "another release or rollback is already running"
 
@@ -178,7 +182,7 @@ if [ "$MODE" = deploy ]; then
   [ "$SEED" = 0 ] || args+=(--seed)
   bash deploy/scripts/bluegreen-deploy.sh "${args[@]}" || rc=$?
 else
-  verify_on_main "$CARRIER_SHA"
+  verify_on_main "$CARRIER_SHA" tip
   checkout "$CARRIER_SHA" "carrier-$CARRIER_SHA"
   bash deploy/scripts/rollback.sh --env "$ENV_NAME" --sha "$SHA" || rc=$?
 fi

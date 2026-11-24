@@ -224,14 +224,14 @@ install -o root -g root -m 0755 "$HERE/shopnest-ssh-entry.sh" "$SBIN/$ENTRY"
 # 3. the wrapper configuration
 install -d -o root -g root -m 0755 /etc/shopnest
 printf '%s\n' "# Written by deploy/host/setup-deploy-host.sh. Not secret." "REPOSITORY=$REPOSITORY" > "$CONF_FILE.tmp"
-chown root:root "$CONF_FILE.tmp"
+chown -h root:root "$CONF_FILE.tmp"
 chmod 0644 "$CONF_FILE.tmp"
 mv "$CONF_FILE.tmp" "$CONF_FILE"
 
 # 4. sudoers: written aside, validated with visudo, then moved into place (an invalid file would lock sudo for everyone)
 tmp="/etc/sudoers.d/.deploy.new"
 sudoers_text > "$tmp"
-chown root:root "$tmp"
+chown -h root:root "$tmp"
 chmod 0440 "$tmp"
 if ! visudo -cf "$tmp" > /dev/null; then rm -f "$tmp"; die "the generated sudoers file is invalid; nothing was installed"; fi
 mv "$tmp" "$SUDOERS_FILE"
@@ -246,16 +246,17 @@ install -d -o root -g root -m 0755 "$home/.ssh"
     echo "$k"
   done
 } > "$home/.ssh/authorized_keys.tmp"
-chown root:root "$home/.ssh/authorized_keys.tmp"
+chown -h root:root "$home/.ssh/authorized_keys.tmp"
 chmod 0644 "$home/.ssh/authorized_keys.tmp"
 mv "$home/.ssh/authorized_keys.tmp" "$home/.ssh/authorized_keys"
-chown root:root "$home"
+chown -h root:root "$home"
 chmod 0755 "$home"
 
 # 6. /opt/shopnest: only root may write there (the wrappers run code from it as root)
 install -d -o root -g root -m 0755 "$SHOPNEST_ROOT"
-chown root:root "$SHOPNEST_ROOT"
+chown -h root:root "$SHOPNEST_ROOT"
 chmod 0755 "$SHOPNEST_ROOT"
-find "$SHOPNEST_ROOT" -xdev -user "$DEPLOY_USER" -exec chown root:root {} +
+# -h: a symbolic link the deploy user planted is re-owned itself, never the file it points to
+find "$SHOPNEST_ROOT" -xdev -user "$DEPLOY_USER" -exec chown -h root:root {} +
 
 verify

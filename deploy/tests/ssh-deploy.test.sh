@@ -246,6 +246,11 @@ check "image with a command appended" "$(run a7 -- deploy --environment staging 
 check "production with --seed" "$(run a8 -- "${prod_args[@]}" --seed)" 2
 check "privileged local port" "$(run a9 -- "${deploy_args[@]}" --local-port 22)" 2
 check "unknown flag" "$(run a10 -- "${deploy_args[@]}" --privileged)" 2
+# A valued option with no value must be refused at once (exit 2), never looped on: `timeout` turns a hang into exit 124.
+for opt in --environment --instance --region --sha --image-ref --frontend-ref --carrier-sha --local-port --log-file; do
+  check "$opt without a value is refused immediately" "$(timeout 20 bash "$SCRIPT" deploy "$opt" > /dev/null 2>&1; echo $?)" 2
+  check "$opt as the LAST argument without a value is refused immediately" "$(timeout 20 bash "$SCRIPT" deploy --environment staging "$opt" > /dev/null 2>&1; echo $?)" 2
+done
 check "rollback without the carrier" "$(run a11 -- rollback --environment staging --instance "$INSTANCE" --region ap-south-1 --sha "$SHA")" 2
 check "rollback with an image" "$(run a12 -- "${rollback_args[@]}" --image-ref "$BACKEND")" 2
 check "deploy with a carrier" "$(run a13 -- "${deploy_args[@]}" --carrier-sha "$SHA2")" 2

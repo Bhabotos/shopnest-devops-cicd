@@ -157,8 +157,9 @@ absent "setup script has no single shared key option" "$SETUP_SRC" '\-\-public-k
 if grep -q -- '--staging-key-file' "$SETUP_SRC" && grep -q -- '--production-key-file' "$SETUP_SRC"; then ok "separate key files for staging and production"; else bad "separate key files are missing"; fi
 if grep -q 'share a key: use a different key for each environment' "$SETUP_SRC"; then ok "the same key for both environments is refused"; else bad "a shared key is not refused"; fi
 if grep -q 'command=\\"\$SBIN/\$ENTRY \$env\\"' "$SETUP_SRC" && grep -q 'restrict,from=' "$SETUP_SRC"; then ok "every key is written restricted, loopback-only and with its environment's forced command"; else bad "the authorized_keys line is not restricted"; fi
-if grep -q 'chown root:root "\$home"' "$SETUP_SRC" && grep -q 'install -d -o root -g root -m 0755 "\$home/.ssh"' "$SETUP_SRC"; then ok "home and ~/.ssh are root-owned (the deploy user cannot add keys or drop the restrictions)"; else bad "home or ~/.ssh stays writable by the deploy user"; fi
-if grep -q 'find "\$SHOPNEST_ROOT" -xdev -user "\$DEPLOY_USER" -exec chown root:root' "$SETUP_SRC"; then ok "everything the deploy user owned in /opt/shopnest becomes root-owned"; else bad "files owned by the deploy user in /opt/shopnest are kept"; fi
+if grep -q 'chown -h root:root "\$home"' "$SETUP_SRC" && grep -q 'install -d -o root -g root -m 0755 "\$home/.ssh"' "$SETUP_SRC"; then ok "home and ~/.ssh are root-owned (the deploy user cannot add keys or drop the restrictions)"; else bad "home or ~/.ssh stays writable by the deploy user"; fi
+if grep -q 'find "\$SHOPNEST_ROOT" -xdev -user "\$DEPLOY_USER" -exec chown -h root:root' "$SETUP_SRC"; then ok "everything the deploy user owned in /opt/shopnest becomes root-owned (chown -h: a planted symbolic link is re-owned, never followed)"; else bad "files owned by the deploy user in /opt/shopnest are kept, or chown follows symbolic links"; fi
+absent "setup script never uses chown without -h" "$SETUP_SRC" '^[^#]*chown[[:space:]]+(root:root|-R)'
 # The private-key guard of the setup script, exercised on its own regex (the script itself needs root to run).
 re='^ssh-ed25519\ ([A-Za-z0-9+/]+=*)(\ [A-Za-z0-9@._:+=-]+)?$'
 if [[ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexample ci@lab" =~ $re ]]; then ok "an ed25519 public key line is accepted"; else bad "a valid public key was refused"; fi
@@ -183,6 +184,35 @@ absent "setup script stores no private key" "$SETUP_SRC" 'BEGIN [A-Z ]*PRIVATE K
 absent "setup script writes no address or token" "$SETUP_SRC" '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}[^"]*(ghp_|github_pat_)'
 if grep -q 'bash deploy/scripts/bluegreen-deploy.sh' "$WRAPPER_SRC" && grep -q 'bash deploy/scripts/rollback.sh' "$WRAPPER_SRC"; then ok "the only scripts run are the repository's two fixed release scripts"; else bad "the wrapper does not call the two fixed scripts"; fi
 check "the wrapper runs exactly two repository scripts" "$(grep -Ec '^[[:space:]]*bash deploy/' "$WRAPPER_SRC")" 2
+
+echo "== wrapper: lock location and rollback carrier"
+absent "the release lock is not in /run/lock (world-writable)" "$WRAPPER_SRC" '^[^#]*/run/lock'
+check "the release lock is in /var/lib/shopnest" "$(grep -c '^LOCK_FILE=/var/lib/shopnest/release.lock' "$WRAPPER_SRC")" 1
+if grep -q 'assert_protected "\$(dirname "\$LOCK_FILE")"' "$WRAPPER_SRC"; then ok "the lock directory must be root-owned and not writable by others"; else bad "the lock directory is not checked"; fi
+check "the rollback carrier must be the tip of main" "$(grep -c 'verify_on_main "\$CARRIER_SHA" tip' "$WRAPPER_SRC")" 1
+check "the deploy target only has to be in the history of main" "$(grep -c 'verify_on_main "\$SHA"$' "$WRAPPER_SRC")" 1
+# verify_on_main itself, with a fake curl: the function is cut out of the wrapper and run on its own (needs python3, as the wrapper does).
+if python3 -I -c 'import json' > /dev/null 2>&1; then
+  mkdir -p "$T/vbin"
+  printf '%s\n' '#!/bin/sh' 'echo "{\"status\": \"${FAKE_STATUS:-}\"}"' > "$T/vbin/curl"
+  chmod +x "$T/vbin/curl"
+  VOM="$(awk '/^verify_on_main\(\) \{/,/^}/' "$WRAPPER_SRC")"
+  vom() { # vom <status> [tip]: the exit code of verify_on_main when GitHub answers <status>
+    FAKE_STATUS="$1" PATH="$T/vbin:$PATH" REPOSITORY=Example/example bash -c 'die() { exit 2; }; fail() { exit 4; }; eval "$1"; shift; verify_on_main "$@"' _ "$VOM" "$SHA" ${2:+"$2"} > /dev/null 2>&1
+    echo $?
+  }
+  check "deploy target: identical to main is accepted" "$(vom identical)" 0
+  check "deploy target: an ancestor of main is accepted" "$(vom behind)" 0
+  check "deploy target: ahead of main is refused" "$(vom ahead)" 2
+  check "deploy target: diverged from main is refused" "$(vom diverged)" 2
+  check "deploy target: an empty answer is refused" "$(vom '')" 2
+  check "carrier: the tip of main is accepted" "$(vom identical tip)" 0
+  check "carrier: an OLDER commit of main is refused" "$(vom behind tip)" 2
+  check "carrier: ahead of main is refused" "$(vom ahead tip)" 2
+  check "carrier: diverged from main is refused" "$(vom diverged tip)" 2
+else
+  echo "SKIP  verify_on_main behaviour (no working python3 on this machine; it runs in CI)"
+fi
 
 echo "== syntax"
 if bash -n "$WRAPPER_SRC" && bash -n "$SETUP_SRC" && bash -n "$ENTRY_SRC"; then ok "bash -n on the wrapper, the setup script and the entry point"; else bad "bash -n failed"; fi
