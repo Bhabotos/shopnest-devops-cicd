@@ -1,0 +1,118 @@
+ssh-deploy: deploy staging 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b; key SHA256:<masked> (public fingerprint)
+ssh-deploy: opening the SSM port-forwarding tunnel to the instance (local port 2222)
+ssh-deploy: tunnel is up
+ssh-deploy: pre-flight ok (tunnel, key, pinned host key and request accepted)
+ssh-deploy: running: shopnest-deploy --env staging --sha 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b --image-ref ghcr.io/bhabotos/shopnest-backend@sha256:91ce23536d6a234b8a01cdd0fad017403c94a650d156913b908161cbda1c816f --frontend-ref ghcr.io/bhabotos/shopnest-frontend@sha256:e6745727381429bb63e6dbadf695db373d619b46e99ca58a664ac07410a04e69 --seed
+2026-11-24T19:25:29Z first deploy of staging: generating its database passwords into /opt/shopnest/staging/secrets.env (mode 600; the values are never printed)
+2026-11-24T19:25:29Z deploy 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b to staging (bundle /opt/shopnest/incoming/3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b)
+2026-11-24T19:25:29Z lab mode: scripts are a git checkout of 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b; the images are pulled from GHCR by digest
+2026-11-24T19:25:40Z backend image shopnest-backend:3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b pulled from GHCR by digest and its revision label matches
+2026-11-24T19:25:45Z frontend files for 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b unpacked from the GHCR image (digest pinned, revision label matches)
+2026-11-24T19:25:45Z ensuring the database is up (it is never recreated or restarted by a deploy)
+ db Pulling 
+ 98e9a0326760 Pulling fs layer 
+ 6cedc56424d1 Pulling fs layer 
+ 59b353deb50e Pulling fs layer 
+ 576cb8ef4643 Pulling fs layer 
+ 47714f1b82c2 Pulling fs layer 
+ b9f6a8f632b2 Pulling fs layer 
+ 8e5860b895ab Pulling fs layer 
+ 7a36a4ed4172 Pulling fs layer 
+ cc382d912eb7 Pulling fs layer 
+ 98e9a0326760 Download complete 
+ cc382d912eb7 Download complete 
+ 6cedc56424d1 Download complete 
+ 7a36a4ed4172 Download complete 
+ b9f6a8f632b2 Download complete 
+ 59b353deb50e Download complete 
+ 576cb8ef4643 Downloading [=>                                                 ]  4.194MB/111.5MB
+ 47714f1b82c2 Download complete 
+ 8e5860b895ab Download complete 
+ 6cedc56424d1 Extracting 1 s
+ 576cb8ef4643 Downloading [======>                                            ]  13.63MB/111.5MB
+ 6cedc56424d1 Extracting 1 s
+ 576cb8ef4643 Downloading [=========>                                         ]  22.02MB/111.5MB
+ 6cedc56424d1 Pull complete 
+ 59b353deb50e Extracting 1 s
+ 576cb8ef4643 Downloading [==============>                                    ]  31.46MB/111.5MB
+ 7a36a4ed4172 Pull complete 
+ 59b353deb50e Pull complete 
+ dada3b93fb98 Download complete 
+ 576cb8ef4643 Downloading [=================>                                 ]  39.85MB/111.5MB
+ 02682a6b40e8 Download complete 
+ cc382d912eb7 Pull complete 
+ 576cb8ef4643 Downloading [=======================>                           ]  51.38MB/111.5MB
+ 576cb8ef4643 Downloading [===========================>                       ]  61.87MB/111.5MB
+ 576cb8ef4643 Downloading [=================================>                 ]  74.45MB/111.5MB
+ 576cb8ef4643 Downloading [======================================>            ]  84.93MB/111.5MB
+ 576cb8ef4643 Downloading [==========================================>        ]  95.42MB/111.5MB
+ 576cb8ef4643 Downloading [================================================>  ]    108MB/111.5MB
+ 576cb8ef4643 Downloading [==================================================>]  111.5MB/111.5MB
+ 576cb8ef4643 Download complete 
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 1 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 2 s
+ 576cb8ef4643 Extracting 3 s
+ 576cb8ef4643 Extracting 3 s
+ 576cb8ef4643 Extracting 3 s
+ 576cb8ef4643 Extracting 3 s
+ 576cb8ef4643 Extracting 3 s
+ 576cb8ef4643 Extracting 3 s
+ 576cb8ef4643 Extracting 3 s
+ 576cb8ef4643 Extracting 3 s
+ b9f6a8f632b2 Pull complete 
+ 47714f1b82c2 Pull complete 
+ 8e5860b895ab Pull complete 
+ 576cb8ef4643 Pull complete 
+ 98e9a0326760 Pull complete 
+ db Pulled 
+ Network shopnest-staging_internal  Creating
+ Network shopnest-staging_internal  Created
+ Volume shopnest-staging_pgdata  Creating
+ Volume shopnest-staging_pgdata  Created
+ Container shopnest-staging-db-1  Creating
+ Container shopnest-staging-db-1  Created
+ Container shopnest-staging-db-1  Starting
+ Container shopnest-staging-db-1  Started
+2026-11-24T19:25:55Z applying migrations (owner role; must stay compatible with the live release)
+applied: 001_init.sql, 002_index_and_currency.sql, 003_app_role_grants.sql
+2026-11-24T19:25:56Z seeding the demo catalogue (idempotent)
+seed complete
+2026-11-24T19:25:57Z release 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b (deploy): live=none (none), target colour=blue
+ Network shopnest-staging_edge  Creating
+ Network shopnest-staging_edge  Created
+ Container shopnest-staging-backend-blue-1  Creating
+ Container shopnest-staging-backend-blue-1  Created
+ Container shopnest-staging-backend-blue-1  Starting
+ Container shopnest-staging-backend-blue-1  Started
+2026-11-24T19:25:58Z waiting for backend-blue to report healthy and commit 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b
+2026-11-24T19:26:01Z backend-blue validated; switching traffic
+ nginx Pulling 
+ 0d23860b4b9e Download complete 
+ nginx Pulled 
+ Container shopnest-staging-nginx-1  Creating
+ Container shopnest-staging-nginx-1  Created
+ Container shopnest-staging-nginx-1  Starting
+ Container shopnest-staging-nginx-1  Started
+2026-11-24T19:26:05Z release 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b is live on blue
+2026-11-24T19:26:05Z DEPLOY SUCCEEDED: 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b is live on staging
+ssh-deploy: the host answered with exit code 0
+ssh-deploy: CONFIRMED: 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b is live in staging; images by digest sha256:91ce23536d6a234b8a01cdd0fad017403c94a650d156913b908161cbda1c816f (backend) and sha256:e6745727381429bb63e6dbadf695db373d619b46e99ca58a664ac07410a04e69 (frontend)
