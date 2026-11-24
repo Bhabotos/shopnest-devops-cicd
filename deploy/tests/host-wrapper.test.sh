@@ -214,6 +214,55 @@ else
   echo "SKIP  verify_on_main behaviour (no working python3 on this machine; it runs in CI)"
 fi
 
+echo "== rollback target: an earlier release can be rolled back; only the carrier has to be the tip of main"
+# Static: in rollback mode the ONLY verify_on_main call is the carrier with "tip"; the rollback target (--sha) is never put to it. The
+# target's legitimacy is enforced elsewhere (rollback.sh on the host: it must be in the release history; rollback.yml: ancestor of main).
+RB_BLOCK="$(awk '/^if \[ "\$MODE" = deploy \]; then$/,/^fi$/' "$WRAPPER_SRC")"
+RB_ELSE="$(printf '%s\n' "$RB_BLOCK" | awk '/^else$/{f=1;next} /^fi$/{f=0} f')"
+check "rollback mode makes exactly one verify_on_main call" "$(printf '%s\n' "$RB_ELSE" | grep -c 'verify_on_main')" 1
+check "that call is the carrier, with tip" "$(printf '%s\n' "$RB_ELSE" | grep -c 'verify_on_main "\$CARRIER_SHA" tip')" 1
+check "the rollback target is never put to verify_on_main" "$(printf '%s\n' "$RB_ELSE" | grep -c 'verify_on_main "\$SHA"')" 0
+check "the rollback target only reaches rollback.sh as --sha" "$(printf '%s\n' "$RB_ELSE" | grep -c 'rollback.sh --env "\$ENV_NAME" --sha "\$SHA"')" 1
+# Behaviour: the wrapper's real deploy/rollback block is run with a fake curl that answers per commit and a fake `bash` that records which
+# script would run. Carrier = tip (identical) and target = an earlier release (behind): the rollback goes ahead, and GitHub is asked about
+# the carrier only. Carrier = an older commit: refused before anything runs.
+if python3 -I -c 'import json' > /dev/null 2>&1; then
+  mkdir -p "$T/rbin"
+  cat > "$T/rbin/curl" << 'FAKECURL'
+#!/bin/sh
+for a in "$@"; do url="$a"; done
+echo "$url" >> "$RB_CURL_LOG"
+case "$url" in
+  *"$RB_CARRIER"*) status="$RB_CARRIER_STATUS" ;;
+  *"$RB_TARGET"*) status="$RB_TARGET_STATUS" ;;
+  *) status="" ;;
+esac
+echo "{\"status\": \"$status\"}"
+FAKECURL
+  chmod +x "$T/rbin/curl"
+  VOM2="$(awk '/^verify_on_main\(\) \{/,/^}/' "$WRAPPER_SRC")"
+  rbrun() { # rbrun <deploy|rollback> <status GitHub gives the carrier (rollback) or ignored> <status GitHub gives the target>: prints the exit code
+    : > "$T/rb.curl.log"
+    : > "$T/rb.bash.log"
+    RB_CURL_LOG="$T/rb.curl.log" RB_BASH_LOG="$T/rb.bash.log" RB_CARRIER="$SHA2" RB_TARGET="$SHA" RB_CARRIER_STATUS="$2" RB_TARGET_STATUS="$3" \
+      PATH="$T/rbin:$PATH" REPOSITORY=Example/example MODE="$1" SHA="$SHA" CARRIER_SHA="$SHA2" ENV_NAME=staging IMAGE_REF=img FRONTEND_REF=fe SEED=0 \
+      bash -c 'die() { exit 2; }; fail() { exit 4; }; checkout() { :; }; bash() { echo "$*" >> "$RB_BASH_LOG"; }; eval "$1"; rc=0; eval "$2"; exit "$rc"' _ "$VOM2" "$RB_BLOCK" > /dev/null 2>&1
+    echo $?
+  }
+  check "rollback: carrier is the tip, target is an earlier release (behind main): accepted" "$(rbrun rollback identical behind)" 0
+  check "  ... and rollback.sh is started for exactly that earlier release" "$(cat "$T/rb.bash.log")" "deploy/scripts/rollback.sh --env staging --sha $SHA"
+  check "  ... and GitHub was asked about the carrier only, never about the target" "$(grep -c "$SHA2" "$T/rb.curl.log")/$(grep -c "$SHA\$" "$T/rb.curl.log")" "1/0"
+  check "rollback: carrier is an older commit of main: refused before anything runs" "$(rbrun rollback behind behind)" 2
+  check "  ... and no script was started" "$(wc -c < "$T/rb.bash.log" | tr -d ' ')" 0
+  check "rollback: carrier ahead of main: refused" "$(rbrun rollback ahead behind)" 2
+  check "rollback: carrier diverged from main: refused" "$(rbrun rollback diverged behind)" 2
+  check "deploy of an earlier release (behind main): accepted" "$(rbrun deploy x behind)" 0
+  check "  ... and the deploy script is the one started" "$(grep -c 'deploy/scripts/bluegreen-deploy.sh --env staging --sha' "$T/rb.bash.log")" 1
+  check "deploy of a commit that is not in main (ahead): refused" "$(rbrun deploy x ahead)" 2
+else
+  echo "SKIP  rollback-target behaviour (no working python3 on this machine; it runs in CI)"
+fi
+
 echo "== syntax"
 if bash -n "$WRAPPER_SRC" && bash -n "$SETUP_SRC" && bash -n "$ENTRY_SRC"; then ok "bash -n on the wrapper, the setup script and the entry point"; else bad "bash -n failed"; fi
 
