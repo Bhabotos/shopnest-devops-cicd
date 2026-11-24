@@ -3,7 +3,9 @@
 #   bash shopnest/incoming/<sha>/deploy/scripts/bluegreen-deploy.sh --env staging --sha <40-hex> [--seed]
 #
 # 1. verify the bundle (scripts and frontend files) and get the backend image built for this exact commit:
-#    on AWS (the only mode for staging and production) it is pulled from ECR BY DIGEST (--image-ref);
+#    on AWS with RDS (BG_LAB unset) it is pulled from ECR BY DIGEST (--image-ref);
+#    in lab mode (BG_LAB=1, the infra/lab instance) the backend AND the frontend are pulled from GHCR BY DIGEST (--image-ref,
+#    --frontend-ref) and the scripts run from a git checkout of this exact commit instead of a bundle;
 #    a local rehearsal (BG_LOCAL_DB=1) may still load a tarball from the bundle
 # 2. check the database is reachable. On AWS the schema migrations are NOT applied here: they ran before this deploy, in
 #    the CodeBuild migrator (the only place with the owner credentials), and a failed migration stopped the pipeline. A
@@ -21,23 +23,25 @@ BUNDLE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 . "$SCRIPT_DIR/lib/bluegreen-lib.sh"
 
 usage() {
-  echo "usage: bluegreen-deploy.sh --env <staging|production> --sha <40-hex commit> --image-ref <ecr repository@sha256:digest> --bundle-key <s3 key> --bundle-sha256 <hex> [--seed (local rehearsal only)]" >&2
+  echo "usage: bluegreen-deploy.sh --env <staging|production> --sha <40-hex commit> --image-ref <ecr or ghcr repository@sha256:digest> (--bundle-key <s3 key> --bundle-sha256 <hex> | --frontend-ref <ghcr shopnest-frontend@sha256:digest>) [--seed (lab and local rehearsal only)]" >&2
   exit "${1:-2}"
 }
 
 ENV_NAME=""
 SHA=""
 IMAGE_REF=""
+FRONTEND_REF=""
 BUNDLE_KEY=""
 BUNDLE_SHA256=""
 SEED=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --env) ENV_NAME="${2:-}"; shift 2 ;;
-    --sha) SHA="${2:-}"; shift 2 ;;
-    --image-ref) IMAGE_REF="${2:-}"; shift 2 ;;
-    --bundle-key) BUNDLE_KEY="${2:-}"; shift 2 ;;
-    --bundle-sha256) BUNDLE_SHA256="${2:-}"; shift 2 ;;
+    --env) [ $# -ge 2 ] || usage; ENV_NAME="$2"; shift 2 ;;
+    --sha) [ $# -ge 2 ] || usage; SHA="$2"; shift 2 ;;
+    --image-ref) [ $# -ge 2 ] || usage; IMAGE_REF="$2"; shift 2 ;;
+    --frontend-ref) [ $# -ge 2 ] || usage; FRONTEND_REF="$2"; shift 2 ;;
+    --bundle-key) [ $# -ge 2 ] || usage; BUNDLE_KEY="$2"; shift 2 ;;
+    --bundle-sha256) [ $# -ge 2 ] || usage; BUNDLE_SHA256="$2"; shift 2 ;;
     --seed) SEED=1; shift ;;
     -h | --help) usage 0 ;;
     *) usage ;;
@@ -45,6 +49,15 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$ENV_NAME" ] && [ -n "$SHA" ] || usage
 bg_require_sha "$SHA"
+
+if [ "${BG_LAB:-}" = "1" ]; then
+  # Lab mode: every argument is checked BEFORE anything changes (before bg_init creates a directory or generates a password).
+  [ -n "$IMAGE_REF" ] && [ -n "$FRONTEND_REF" ] || bg_die "--image-ref and --frontend-ref are required in lab mode: both images are taken from GHCR by digest, never from a tag"
+  bg_validate_lab_image_ref "$IMAGE_REF" backend
+  bg_validate_lab_image_ref "$FRONTEND_REF" frontend
+  [ -z "$BUNDLE_KEY$BUNDLE_SHA256" ] || bg_die "--bundle-key and --bundle-sha256 are not used in lab mode (the release is a git checkout)"
+  bg_lab_check_checkout "$SHA" "$BUNDLE_DIR"
+fi
 
 bg_init "$ENV_NAME" "$BUNDLE_DIR"
 if [ "$BG_DB_MODE" = rds ]; then
@@ -63,15 +76,25 @@ trap 'bg_unlock; sleep 1' EXIT   # from here on this run owns the lock and must 
 
 bg_log "deploy $SHA to $BG_ENV (bundle $BUNDLE_DIR)"
 
-[ "$(cat "$BUNDLE_DIR/RELEASE_SHA" 2> /dev/null)" = "$SHA" ] || bg_die "the bundle is for a different commit than --sha"
-(cd "$BUNDLE_DIR" && sha256sum --check --strict SHA256SUMS > /dev/null) || bg_die "bundle checksum verification failed"
-bg_log "bundle verified"
-bg_frontend_ok "$BUNDLE_DIR/frontend-dist" || bg_die "frontend-dist has no non-empty index.html; refusing before anything is changed"
+if [ "$BG_DB_MODE" = lab ]; then
+  bg_log "lab mode: scripts are a git checkout of $SHA; the images are pulled from GHCR by digest"
+else
+  [ "$(cat "$BUNDLE_DIR/RELEASE_SHA" 2> /dev/null)" = "$SHA" ] || bg_die "the bundle is for a different commit than --sha"
+  (cd "$BUNDLE_DIR" && sha256sum --check --strict SHA256SUMS > /dev/null) || bg_die "bundle checksum verification failed"
+  bg_log "bundle verified"
+  bg_frontend_ok "$BUNDLE_DIR/frontend-dist" || bg_die "frontend-dist has no non-empty index.html; refusing before anything is changed"
+fi
 
 # Before any container exists: the metadata-service guard (AWS mode).
 bg_host_guard
 
-if [ -n "$IMAGE_REF" ]; then
+if [ "$BG_DB_MODE" = lab ]; then
+  bg_pull_lab_image "$IMAGE_REF" "$SHA" backend
+  bg_log "backend image shopnest-backend:$SHA pulled from GHCR by digest and its revision label matches"
+  bg_pull_lab_image "$FRONTEND_REF" "$SHA" frontend
+  bg_frontend_from_image "$SHA" || bg_die "could not install the frontend files from the frontend image"
+  bg_log "frontend files for $SHA unpacked from the GHCR image (digest pinned, revision label matches)"
+elif [ -n "$IMAGE_REF" ]; then
   bg_pull_image "$IMAGE_REF" "$SHA"
   bg_log "backend image shopnest-backend:$SHA pulled from ECR by digest and its revision label matches"
 elif [ "$BG_DB_MODE" = rds ]; then
@@ -84,7 +107,9 @@ else
   bg_log "backend image shopnest-backend:$SHA loaded (local rehearsal tarball)"
 fi
 
-bg_frontend_install "$SHA" "$BUNDLE_DIR/frontend-dist" || bg_die "could not install the frontend files"
+if [ "$BG_DB_MODE" != lab ]; then
+  bg_frontend_install "$SHA" "$BUNDLE_DIR/frontend-dist" || bg_die "could not install the frontend files"
+fi
 if [ "$BG_DB_MODE" = rds ]; then bg_record_bundle "$SHA" "$BUNDLE_KEY" "$BUNDLE_SHA256"; fi
 
 export MIGRATE_TAG="$SHA"

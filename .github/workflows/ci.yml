@@ -154,6 +154,8 @@ jobs:
         run: bash deploy/tests/bluegreen-logic.test.sh
       - name: Offline metadata-guard tests (fake iptables and Docker, no root, no containers)
         run: bash deploy/tests/imds-guard.test.sh
+      - name: Offline lab-mode tests (GHCR digests, generated passwords, loopback staging, broken release never takes traffic; fake Docker, no containers)
+        run: bash deploy/tests/lab-mode.test.sh
       - name: Environment files agree with the metadata guard (static)
         run: |
           set -euo pipefail
