@@ -1,0 +1,133 @@
+name: oidc-diagnostic
+
+# Diagnostic only. Requests a short-lived GitHub OIDC token for the selected Environment, decodes the payload locally and
+# checks iss, aud and sub against the values the Terraform trust policies expect. It does NOT call AWS, assume a role, check out
+# the repository, use secrets or variables, or deploy anything. The raw JWT is never printed, saved, uploaded or exported:
+# it flows from curl straight into a Python process through a pipe, and only iss, aud and sub are printed.
+# Manual start only, from main only.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment whose OIDC subject is checked
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+
+permissions: {}
+
+jobs:
+  oidc-claims:
+    name: OIDC claims (${{ inputs.environment }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+    steps:
+      - name: Inspect OIDC token claims
+        env:
+          SELECTED_ENVIRONMENT: ${{ inputs.environment }}
+          EXPECTED_ISS: https://token.actions.githubusercontent.com
+          EXPECTED_AUD: sts.amazonaws.com
+          EXPECTED_SUB_STAGING: repo:Bhabotos@215818701/shopnest-devops-cicd@1461723262:environment:staging
+          EXPECTED_SUB_PRODUCTION: repo:Bhabotos@215818701/shopnest-devops-cicd@1461723262:environment:production
+        run: |
+          set -euo pipefail
+          set +x
+
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::This diagnostic runs only from refs/heads/main (got ${GITHUB_REF})."
+            exit 1
+          fi
+
+          case "${SELECTED_ENVIRONMENT}" in
+            staging)    EXPECTED_SUB="${EXPECTED_SUB_STAGING}" ;;
+            production) EXPECTED_SUB="${EXPECTED_SUB_PRODUCTION}" ;;
+            *)
+              echo "::error::Unsupported environment '${SELECTED_ENVIRONMENT}' (expected staging or production)."
+              exit 1
+              ;;
+          esac
+          export EXPECTED_SUB
+
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error::The OIDC request variables are missing. The job needs 'permissions: id-token: write'."
+            exit 1
+          fi
+
+          # The token goes curl -> pipe -> python and is never stored in a shell variable, file, output or log.
+          # curl --fail hides the response body on an HTTP error, so no error text can echo a token.
+          status=0
+          curl --silent --show-error --fail --max-time 30 \
+            --header "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            --header "Accept: application/json; api-version=2.0" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${EXPECTED_AUD}" \
+            | python3 -I -c '
+          import base64, json, os, sys
+
+          def fail(msg):
+              print("::error::" + msg)
+              sys.exit(1)
+
+          try:
+              token = json.load(sys.stdin)["value"]
+              segments = token.split(".")
+              if len(segments) != 3:
+                  fail("The response is not a three-segment JWT.")
+              payload = segments[1]
+              payload += "=" * (-len(payload) % 4)
+              claims = json.loads(base64.urlsafe_b64decode(payload))
+          except SystemExit:
+              raise
+          except Exception:
+              fail("Could not read the token response (details withheld so no token text can be logged).")
+          finally:
+              token = None
+              segments = None
+              payload = None
+
+          iss = claims.get("iss")
+          aud = claims.get("aud")
+          sub = claims.get("sub")
+          auds = aud if isinstance(aud, list) else [aud]
+
+          print("iss: " + str(iss))
+          print("aud: " + json.dumps(aud))
+          print("sub: " + str(sub))
+
+          expected_iss = os.environ["EXPECTED_ISS"]
+          expected_aud = os.environ["EXPECTED_AUD"]
+          expected_sub = os.environ["EXPECTED_SUB"]
+
+          problems = []
+          if iss != expected_iss:
+              problems.append("issuer mismatch: expected " + expected_iss)
+          if expected_aud not in auds:
+              problems.append("audience does not include " + expected_aud)
+          if sub != expected_sub:
+              problems.append("subject mismatch against the Terraform trust policy; expected: " + expected_sub)
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("### OIDC diagnostic (" + os.environ["SELECTED_ENVIRONMENT"] + ")\n\n")
+                  fh.write("| claim | value |\n|---|---|\n")
+                  fh.write("| iss | `" + str(iss) + "` |\n")
+                  fh.write("| aud | `" + json.dumps(aud) + "` |\n")
+                  fh.write("| sub | `" + str(sub) + "` |\n\n")
+                  fh.write("Result: " + ("FAILED - " + "; ".join(problems) if problems else "all claims match the expected values") + "\n")
+
+          if problems:
+              for p in problems:
+                  print("::error::" + p)
+              sys.exit(1)
+          print("OK: iss, aud and sub match the expected values for " + os.environ["SELECTED_ENVIRONMENT"] + ".")
+          ' || status=$?
+
+          # Remove the request credentials from this shell's environment, whatever the result was.
+          unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+          exit "${status}"
