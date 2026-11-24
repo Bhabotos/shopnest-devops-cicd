@@ -1,0 +1,13 @@
+{
+  "url": "http://127.0.0.1:18081/health",
+  "start": "2026-11-24T20:47:38.196Z",
+  "end": "2026-11-24T21:03:38.759Z",
+  "duration_s": 960,
+  "requests": 2270,
+  "ok": 2270,
+  "failed": 0,
+  "timeouts": 0,
+  "non200": 0,
+  "longest_failure_streak": 0,
+  "latency_ms": { "min": 204, "avg": 205, "p50": 205, "p95": 206, "p99": 211, "max": 250 }
+}

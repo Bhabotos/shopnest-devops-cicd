@@ -1,0 +1,34 @@
+ssh-deploy: deploy staging 6ac7802018de979986029c020d4bcf6ce78276bc; key SHA256:<masked> (public fingerprint)
+ssh-deploy: opening the SSM port-forwarding tunnel to the instance (local port 2222)
+ssh-deploy: tunnel is up
+ssh-deploy: pre-flight ok (tunnel, key, pinned host key and request accepted)
+ssh-deploy: running: shopnest-deploy --env staging --sha 6ac7802018de979986029c020d4bcf6ce78276bc --image-ref ghcr.io/bhabotos/shopnest-backend@sha256:db90d4e42a30d75e7e8405618a39387a594bc885fe0ebbcc9dfc1a4857ab9153 --frontend-ref ghcr.io/bhabotos/shopnest-frontend@sha256:fc3d720c0e76e02e11710320e16832625fdd94e09a2e12b47ab5ed7c69723cf3 --seed
+2026-11-24T20:53:21Z deploy 6ac7802018de979986029c020d4bcf6ce78276bc to staging (bundle /opt/shopnest/incoming/6ac7802018de979986029c020d4bcf6ce78276bc)
+2026-11-24T20:53:21Z lab mode: scripts are a git checkout of 6ac7802018de979986029c020d4bcf6ce78276bc; the images are pulled from GHCR by digest
+2026-11-24T20:53:26Z backend image shopnest-backend:6ac7802018de979986029c020d4bcf6ce78276bc pulled from GHCR by digest and its revision label matches
+2026-11-24T20:53:29Z frontend files for 6ac7802018de979986029c020d4bcf6ce78276bc unpacked from the GHCR image (digest pinned, revision label matches)
+2026-11-24T20:53:29Z ensuring the database is up (it is never recreated or restarted by a deploy)
+ Container shopnest-staging-db-1  Running
+2026-11-24T20:53:29Z applying migrations (owner role; must stay compatible with the live release)
+no pending migrations
+2026-11-24T20:53:30Z seeding the demo catalogue (idempotent)
+seed complete
+2026-11-24T20:53:31Z release 6ac7802018de979986029c020d4bcf6ce78276bc (deploy): live=green (c5f6ef3856974068591db8f16e7b6b91005d280d), target colour=blue
+ Container shopnest-staging-backend-blue-1  Recreate
+ Container shopnest-staging-backend-blue-1  Recreated
+ Container shopnest-staging-backend-blue-1  Starting
+ Container shopnest-staging-backend-blue-1  Started
+2026-11-24T20:53:31Z waiting for backend-blue to report healthy and commit 6ac7802018de979986029c020d4bcf6ce78276bc
+2026-11-24T20:53:34Z backend-blue validated; switching traffic
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/11/24 20:53:35 [notice] 3913#3913: signal process started
+2026-11-24T20:53:35Z FAULT INJECTION (staging test): armed for release 6ac7802018de979986029c020d4bcf6ce78276bc; the fault file is consumed and removed; its post-switch verification will be reported as FAILED
+2026-11-24T20:53:45Z post-switch verification FAILED; returning traffic to the previous release
+2026-11-24T20:53:45Z this failure was INJECTED by the staging fault file (a test); the automatic rollback below is the real one
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/11/24 20:53:45 [notice] 3935#3935: signal process started
+2026-11-24T20:53:46Z previous release c5f6ef3856974068591db8f16e7b6b91005d280d is live again (automatic rollback complete)
+2026-11-24T20:53:46Z DEPLOY FAILED (exit 1): the previous release is serving; see the messages above; history: /opt/shopnest/staging/state/history.log
+ssh-deploy: the host answered with exit code 1

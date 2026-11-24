@@ -1,0 +1,24 @@
+ssh-deploy: rollback staging 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b; key SHA256:<masked> (public fingerprint)
+ssh-deploy: opening the SSM port-forwarding tunnel to the instance (local port 2222)
+ssh-deploy: tunnel is up
+ssh-deploy: pre-flight ok (tunnel, key, pinned host key and request accepted)
+ssh-deploy: running: shopnest-rollback --env staging --sha 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b --carrier-sha 6ac7802018de979986029c020d4bcf6ce78276bc
+2026-11-24T20:55:09Z manual rollback of staging to 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b
+2026-11-24T20:55:09Z ensuring the database is up (it is never recreated or restarted by a rollback)
+ Container shopnest-staging-db-1  Running
+2026-11-24T20:55:10Z release 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b (manual rollback): live=green (c5f6ef3856974068591db8f16e7b6b91005d280d), target colour=blue
+ Container shopnest-staging-backend-blue-1  Creating
+ Container shopnest-staging-backend-blue-1  Created
+ Container shopnest-staging-backend-blue-1  Starting
+ Container shopnest-staging-backend-blue-1  Started
+2026-11-24T20:55:10Z waiting for backend-blue to report healthy and commit 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b
+2026-11-24T20:55:13Z backend-blue validated; switching traffic
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/11/24 20:55:14 [notice] 4025#4025: signal process started
+2026-11-24T20:55:14Z fault injection: no fault file at /opt/shopnest/staging/fault.env, not armed
+2026-11-24T20:55:14Z draining backend-green for 10s before stopping it
+2026-11-24T20:55:25Z release 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b is live on blue
+2026-11-24T20:55:25Z ROLLBACK SUCCEEDED: 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b is live on staging
+ssh-deploy: the host answered with exit code 0
+ssh-deploy: CONFIRMED: staging is serving 3c53ba7143839ef8d1aa6a2d0bea2af87c62a61b
