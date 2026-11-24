@@ -98,8 +98,9 @@ jobs:
       contents: read
       id-token: write
     concurrency:
-      # The same group as cd.yml: one lab instance, so a deploy and a rollback never overlap.
-      group: deploy-lab
+      # The same per-environment group as cd.yml (see there): a rollback and a deploy of the same Environment never overlap, and a production
+      # request waiting for its reviewer does not block staging. The host's own lock serializes everything on the instance.
+      group: deploy-lab-${{ inputs.environment }}
       cancel-in-progress: false
     env:
       TARGET_ENV: ${{ inputs.environment }}

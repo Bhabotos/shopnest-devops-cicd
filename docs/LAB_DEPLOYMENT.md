@@ -1,6 +1,6 @@
 # Lab deployment: one EC2 instance, GHCR images, SSH through a Systems Manager tunnel
 
-Status (2026-11-25): **the deployment code is merged and tested offline. The instance, the two OIDC deploy roles and the GitHub Environment configuration exist. No deployment has run: `cd.yml` and `rollback.yml` have never executed their deploy jobs.**
+Status (2026-11-25): **staging has been deployed once for real** (CD run [45469834249](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45469834249), commit `3c53ba7`). The deployment code is merged; the instance, the two OIDC deploy roles and the GitHub Environment configuration exist. **Production has not been deployed** (its job waits for the reviewer). Zero downtime and rollback on the instance are still to be demonstrated.
 Every statement below says whether it is implemented, tested offline, or **needs a real demonstration**. This document describes the current deployment target. It replaces, for deployment, the design in
 [`AWS_STAGING_INTEGRATION.md`](AWS_STAGING_INTEGRATION.md) (RDS, ECR, ALB, NAT, CodeBuild, S3 bundles), which stays in the repository as the earlier, larger design and is no longer used by `cd.yml` or `rollback.yml`.
 
@@ -58,9 +58,15 @@ Each deploy job installs the **pinned Session Manager plugin first** (version an
 5. the blue/green script pulls both images **by digest** and requires each image's revision label to equal the commit, starts the environment's PostgreSQL container if needed (never recreated), applies the migrations as the owner role, starts the idle colour, requires `/health` OK and `/version == the commit`, switches nginx in one reload and verifies again. Before the switch traffic never moves; after it, a failed check returns traffic to the previous release (automatic rollback);
 6. the client only reports success if the host's own output confirms that **this commit** went live from **these digests**; the tunnel, the SSM session and the key are then cleaned up.
 
+Concurrency: each Environment has its own group (`deploy-lab-staging`, `deploy-lab-production`). A job waiting for its reviewer keeps its group, so a single shared group let the waiting production job block every later staging deploy (found on the first real run); the host's own lock in the wrapper still serializes everything on the instance.
+
 Exit codes: `0` deployed and confirmed; `1` failed with the previous release serving; `3` failed **and** the recovery failed (an operator is needed now); `4` the result could not be confirmed. The log is written on the host (`/opt/shopnest/logs/`), printed in the job, and uploaded as an artifact kept for 30 days (account and instance ids are redacted from the error text). Every deploy is traceable to its commit: the images carry it as a tag and a label, `/version` reports it, the history file on the host records it, and the run summary lists the commit and both digests.
 
 **Production** is deployed only by `deploy-production`, bound to the `production` GitHub Environment: GitHub holds it until the required reviewer approves, it runs only after staging deployed, its AWS role trusts only the production Environment's OIDC subject, and its key is bound to production on the host. A deploy never seeds production.
+
+## Checking staging from outside (`staging-verify`)
+
+The manual `staging-verify` workflow opens a Systems Manager port-forward to the staging nginx (loopback port 8081 on the instance) with the staging role, no SSH key. Mode `verify` checks the frontend, `/health`, `/version` (optionally against an expected commit) and a database-backed `/api/products`; mode `traffic` runs `request-loop.sh` for the Part F evidence while a staging deploy happens. It changes nothing and never touches production.
 
 ## Rollback (`rollback.yml`)
 

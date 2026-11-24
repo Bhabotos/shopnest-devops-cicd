@@ -1,0 +1,189 @@
+name: staging-verify
+
+# Exercises the STAGING environment from outside the instance, through the same Systems Manager port-forwarding the deploy uses (no SSH key,
+# no inbound port, no secret). It opens a tunnel to the staging nginx, which listens only on the instance's loopback address (port 8081), and:
+#   mode verify   checks the frontend, /health, /version (optionally against an expected commit) and a database-backed API call;
+#   mode traffic  runs deploy/scripts/request-loop.sh against /health (and /version) for the given time: start it, then trigger a staging
+#                 deploy while it runs; the saved log, failures, version changes and JSON summary are the Part F zero-downtime evidence.
+# The numbers include the tunnel (GitHub runner -> Systems Manager -> instance), so latencies are higher than a direct request. It changes
+# nothing on the host and never touches production. Manual start only, from main only; the staging role can only open port-forwarding sessions.
+#
+# Settings read from the staging Environment: variables AWS_ROLE_ARN, AWS_REGION, LAB_INSTANCE_ID.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: verify (one-shot checks) or traffic (continuous requests; start it, then deploy staging)
+        type: choice
+        required: true
+        default: verify
+        options: [verify, traffic]
+      expected_sha:
+        description: verify only, optional - the full commit SHA /version must report
+        type: string
+        required: false
+        default: ""
+      seconds:
+        description: traffic only - how long to send requests (at most 1500)
+        type: string
+        required: false
+        default: "300"
+      interval:
+        description: traffic only - seconds between requests
+        type: string
+        required: false
+        default: "0.2"
+
+# No default token permissions: the job declares exactly what it needs.
+permissions: {}
+
+jobs:
+  staging:
+    name: Staging ${{ inputs.mode }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      # Its own group: it must be able to run WHILE a staging deploy (group deploy-lab-staging) is in progress.
+      group: staging-verify
+      cancel-in-progress: false
+    env:
+      MODE: ${{ inputs.mode }}
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      SECONDS_TO_RUN: ${{ inputs.seconds }}
+      INTERVAL: ${{ inputs.interval }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      LAB_INSTANCE_ID: ${{ vars.LAB_INSTANCE_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the inputs and the settings
+        run: |
+          set -euo pipefail
+          for name in AWS_REGION LAB_INSTANCE_ID; do
+            [ -n "${!name}" ] || { echo "::error::$name is not set (a variable of the staging Environment)"; exit 1; }
+          done
+          case "$MODE" in verify | traffic) ;; *) echo "::error::mode must be verify or traffic"; exit 1 ;; esac
+          [[ -z "$EXPECTED_SHA" || "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::expected_sha must be empty or a full 40-character lowercase commit"; exit 1; }
+          [[ "$SECONDS_TO_RUN" =~ ^[0-9]{1,4}$ && "$SECONDS_TO_RUN" -ge 5 && "$SECONDS_TO_RUN" -le 1500 ]] || { echo "::error::seconds must be 5 to 1500"; exit 1; }
+          [[ "$INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::interval must be a number"; exit 1; }
+      # Installed BEFORE the AWS credentials exist: the package is only a checksum-verified download, and it never runs with them.
+      - name: Install the Session Manager plugin (pinned version, checksum verified)
+        run: bash deploy/ci/install-ssm-plugin.sh
+      - name: Configure AWS credentials (OIDC, short-lived)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+      - name: Open the tunnel to the staging nginx and run the checks
+        id: run
+        run: |
+          set -uo pipefail
+          PORT=18081
+          OUT=staging-evidence
+          mkdir -p "$OUT"
+          TMP="$(mktemp -d)"
+          TUNNEL_LOG="$TMP/tunnel.log"
+          TUNNEL_PID=""
+          SESSION_ID=""
+          redact() { sed -E 's/(^|[^0-9A-Za-z])[0-9]{12}([^0-9A-Za-z]|$)/\1<account>\2/g; s/(^|[^0-9A-Za-z-])i-[0-9a-f]{8,17}([^0-9A-Za-z]|$)/\1<instance>\2/g'; }
+          cleanup() {
+            local rc=$?
+            trap - EXIT
+            [ -z "$SESSION_ID" ] || aws ssm terminate-session --region "$AWS_REGION" --session-id "$SESSION_ID" > /dev/null 2>&1 || true
+            if [ -n "$TUNNEL_PID" ]; then
+              kill -TERM -- "-$TUNNEL_PID" 2> /dev/null || kill -TERM "$TUNNEL_PID" 2> /dev/null || true
+              sleep 2
+              kill -KILL -- "-$TUNNEL_PID" 2> /dev/null || true
+            fi
+            rm -rf "$TMP"
+            exit "$rc"
+          }
+          trap cleanup EXIT
+          # Only the staging nginx port (8081, loopback on the instance). The role can open a port-forwarding session; it holds no SSH key.
+          PARAMS="{\"portNumber\":[\"8081\"],\"localPortNumber\":[\"${PORT}\"]}"
+          setsid aws ssm start-session --region "$AWS_REGION" --target "$LAB_INSTANCE_ID" --document-name AWS-StartPortForwardingSession --parameters "$PARAMS" > "$TUNNEL_LOG" 2>&1 &
+          TUNNEL_PID=$!
+          up=0
+          for _ in $(seq 1 45); do
+            kill -0 "$TUNNEL_PID" 2> /dev/null || { echo "::error::the tunnel process ended before it was ready"; redact < "$TUNNEL_LOG"; exit 4; }
+            if grep -q 'Waiting for connections' "$TUNNEL_LOG" 2> /dev/null; then up=1; break; fi
+            sleep 2
+          done
+          SESSION_ID="$(sed -n 's/^Starting session with SessionId: *//p' "$TUNNEL_LOG" | head -n 1 | tr -d '\r')"
+          [[ $SESSION_ID =~ ^[A-Za-z0-9_.@:-]+$ ]] || SESSION_ID=""
+          [ "$up" = 1 ] || { echo "::error::the tunnel was not ready after 90 seconds"; redact < "$TUNNEL_LOG"; exit 4; }
+          echo "tunnel is up (local port ${PORT} -> staging nginx on the instance)"
+          BASE="http://127.0.0.1:${PORT}"
+
+          if [ "$MODE" = verify ]; then
+            fail=0
+            check() { # check <label> <command...>: PASS or FAIL, recorded in the evidence file
+              local label="$1"; shift
+              if "$@"; then echo "PASS  $label" | tee -a "$OUT/verify.txt"; else echo "FAIL  $label" | tee -a "$OUT/verify.txt"; fail=1; fi
+            }
+            code_is_200() { [ "$(cat "$1")" = 200 ]; }
+            frontend_ok() { code_is_200 "$OUT/index.code" && grep -qi "<html" "$OUT/index.html"; }
+            health_ok() { code_is_200 "$OUT/health.code" && grep -q "status.*ok" "$OUT/health.json"; }
+            version_ok() { code_is_200 "$OUT/version.code"; }
+            cat > "$TMP/catalogue.py" << 'PY'
+          import json, sys
+          code = open(sys.argv[1]).read().strip()
+          data = json.load(open(sys.argv[2]))
+          items = data.get("products", data) if isinstance(data, dict) else data
+          sys.exit(0 if code == "200" and isinstance(items, list) and len(items) > 0 else 1)
+          PY
+            catalogue_ok() { python3 -I "$TMP/catalogue.py" "$OUT/products.code" "$OUT/products.json"; }
+            : > "$OUT/verify.txt"
+            echo "verify $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OUT/verify.txt"
+            curl -sS --max-time 10 -o "$OUT/index.html" -w '%{http_code}\n' "$BASE/" > "$OUT/index.code" 2> /dev/null || true
+            check "frontend: GET / returns 200 and HTML" frontend_ok
+            curl -sS --max-time 10 -o "$OUT/health.json" -w '%{http_code}\n' "$BASE/health" > "$OUT/health.code" 2> /dev/null || true
+            check "backend: GET /health returns 200 with status ok" health_ok
+            curl -sS --max-time 10 -o "$OUT/version.json" -w '%{http_code}\n' "$BASE/version" > "$OUT/version.code" 2> /dev/null || true
+            check "backend: GET /version returns 200" version_ok
+            echo "version answer: $(head -c 300 "$OUT/version.json")" | tee -a "$OUT/verify.txt"
+            if [ -n "$EXPECTED_SHA" ]; then
+              check "release: /version reports the expected commit" grep -q "$EXPECTED_SHA" "$OUT/version.json"
+            fi
+            curl -sS --max-time 10 -o "$OUT/products.json" -w '%{http_code}\n' "$BASE/api/products" > "$OUT/products.code" 2> /dev/null || true
+            check "database: GET /api/products returns 200 and a non-empty catalogue (backend -> PostgreSQL)" catalogue_ok
+            echo "products answer (first 200 bytes): $(head -c 200 "$OUT/products.json")" | tee -a "$OUT/verify.txt"
+            [ "$fail" -eq 0 ] || exit 1
+          else
+            mkdir -p "$OUT/traffic"
+            rc=0
+            bash deploy/scripts/request-loop.sh --url "${BASE}/health" --version-url "${BASE}/version" --seconds "$SECONDS_TO_RUN" --interval "$INTERVAL" --max-time 5 \
+              --log "$OUT/traffic/request-loop.log" --json "$OUT/traffic/summary.json" || rc=$?
+            echo "request-loop exit code: $rc"
+            echo "--- version changes seen during the run:"; cat "$OUT/traffic/request-loop.log.versions" 2> /dev/null || true
+            exit "$rc"
+          fi
+      - name: Upload the evidence
+        if: always() && hashFiles('staging-evidence/**') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: staging-${{ inputs.mode }}-${{ github.run_id }}
+          path: staging-evidence
+          retention-days: 30
+      - name: Summary
+        if: always()
+        env:
+          RESULT: ${{ steps.run.outcome }}
+        run: |
+          {
+            echo "### Staging ${MODE}"
+            echo "- Result: \`${RESULT}\`"
+            echo "- Through a Systems Manager port-forward to the staging nginx (loopback on the instance); nothing on the host was changed."
+            if [ "$MODE" = traffic ] && [ -f staging-evidence/traffic/request-loop.log ]; then
+              echo "- $(grep '^SUMMARY' staging-evidence/traffic/request-loop.log)"
+              echo "- $(grep '^STATS' staging-evidence/traffic/request-loop.log)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
