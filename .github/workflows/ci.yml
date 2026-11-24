@@ -293,6 +293,12 @@ jobs:
           fi
       - name: Offline CI-helper tests (bundle, image push, migrator, Systems Manager runner; fake aws and docker)
         run: bash deploy/tests/ci-helpers.test.sh
+      - name: Host wrappers, SSH entry point and host setup (offline tests of validation, the sudoers rule and key binding; no root, no network)
+        run: bash deploy/tests/host-wrapper.test.sh
+      - name: SSH deploy through the SSM tunnel and the pinned plugin installer (offline; fake aws, ssh and curl)
+        # Proves strict host key checking against the pinned key, the pre-flight, the exit codes, and that the tunnel, the SSM session and
+        # the key are cleaned up on every path. It does not prove AWS, sshd or the instance: that needs the first real run.
+        run: bash deploy/tests/ssh-deploy.test.sh
       - name: SSM document scripts pass ShellCheck (static; extracted from the Terraform source)
         # ShellCheck is preinstalled on ubuntu-latest, as for the "ShellCheck" step above.
         run: bash deploy/tests/ssm-scripts.test.sh
