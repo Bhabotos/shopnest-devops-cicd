@@ -1,0 +1,32 @@
+#!/bin/bash
+# The ONLY command the deploy SSM document runs on the instance (Terraform fills in the environment and the repository).
+# It fetches this PUBLIC repository at the exact commit being deployed (no credential), checks the commit, and runs the blue/green
+# deploy in lab mode. The backend and frontend images are named by DIGEST from GHCR; the parameters are validated by the document's
+# allowedPattern rules before they reach this script, and again by the deploy script itself.
+# Exit codes of bluegreen-deploy.sh pass through: 0 deployed; 1 failed, the previous release is serving; 3 failed AND the automatic
+# rollback failed (needs an operator).
+set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+umask 022   # the nginx and database containers run as unprivileged users and must be able to read the staged files
+export SHOPNEST_HOME=/opt/shopnest
+export BG_LAB=1
+SHA='{{ Sha }}'
+IMAGE_REF='{{ ImageRef }}'
+FRONTEND_REF='{{ FrontendRef }}'
+SEED='{{ Seed }}'
+[ -f /var/lib/shopnest/bootstrap-complete ] || { echo "the host bootstrap has not completed (see /var/lib/shopnest/bootstrap-failed)"; exit 4; }
+WORK="$SHOPNEST_HOME/incoming/$SHA"
+rm -rf "$WORK"
+mkdir -p "$WORK"
+cd "$WORK"
+git init --quiet
+git fetch --quiet --depth 1 "https://github.com/${repository}.git" "$SHA"
+git checkout --quiet FETCH_HEAD
+[ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "the fetched commit is not $SHA"; exit 4; }
+rc=0
+if [ "$SEED" = "true" ]; then
+  bash deploy/scripts/bluegreen-deploy.sh --env '${environment}' --sha "$SHA" --image-ref "$IMAGE_REF" --frontend-ref "$FRONTEND_REF" --seed || rc=$?
+else
+  bash deploy/scripts/bluegreen-deploy.sh --env '${environment}' --sha "$SHA" --image-ref "$IMAGE_REF" --frontend-ref "$FRONTEND_REF" || rc=$?
+fi
+exit "$rc"

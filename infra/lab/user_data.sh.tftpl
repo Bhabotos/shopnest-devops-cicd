@@ -1,0 +1,47 @@
+#!/bin/bash
+# First-boot setup for the ShopNest lab instance (runs once, as root, via cloud-init).
+#
+# Installs Docker, the Compose plugin and git. The Systems Manager agent is preinstalled on the Ubuntu AMI. It writes no secret and
+# holds no AWS access key: the instance role only allows Systems Manager. There is no SSH key and no inbound SSH port.
+# The deploy scripts keep everything under /opt/shopnest (one directory per environment, created at the first deploy).
+#
+# COMPLETION MARKER. Check /var/lib/shopnest/bootstrap-complete before deploying. On failure the script writes
+# /var/lib/shopnest/bootstrap-failed (with the failing line). Recovery: re-run it from a Session Manager session
+# (cloud-init keeps it under /var/lib/cloud/instance/scripts/).
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+STATE_DIR=/var/lib/shopnest
+install -d -o root -g root -m 0755 "$STATE_DIR" # root-owned, not writable by others: the release lock lives here (deploy/host/shopnest-release.sh refuses otherwise)
+rm -f "$STATE_DIR/bootstrap-complete" "$STATE_DIR/bootstrap-failed"
+trap 'echo "bootstrap failed near line $LINENO at $(date -u +%FT%TZ)" > "$STATE_DIR/bootstrap-failed"' ERR
+
+# retry <attempts> <delay seconds> <command...>: the network may still be coming up when the instance boots.
+retry() {
+  local attempts="$1" delay="$2" n
+  shift 2
+  for ((n = 1; n <= attempts; n++)); do
+    if "$@"; then return 0; fi
+    echo "attempt $n of $attempts failed: $*" >&2
+    sleep "$delay"
+  done
+  return 1
+}
+
+retry 30 10 apt-get update -y
+retry 5 10 apt-get install -y docker.io docker-compose-v2 git ca-certificates curl
+systemctl enable --now docker
+
+# Where the deploy scripts keep releases, state and logs. 755 so the unprivileged nginx and database containers can read their staged files; each environment's generated secrets file is created mode 600.
+install -d -m 755 /opt/shopnest
+
+# A t3.small has 2 GiB of RAM: a swap file absorbs the short peak while a new colour starts next to the old one.
+if [ "${swap_size_gb}" -gt 0 ] && [ ! -f /swapfile ]; then
+  fallocate -l "${swap_size_gb}G" /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+date -u +%FT%TZ > "$STATE_DIR/bootstrap-complete"

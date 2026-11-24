@@ -263,6 +263,11 @@ else
   echo "SKIP  rollback-target behaviour (no working python3 on this machine; it runs in CI)"
 fi
 
+echo "== release-lock directory: created and verified by the setup script and by the bootstrap"
+check "setup creates the state directory root-owned 0755" "$(grep -c 'install -d -o root -g root -m 0755 "\$STATE_DIR"' "$SETUP_SRC")" 1
+check "setup verifies the state directory (0755, root-owned, parents safe)" "$(grep -c 'STATE_DIR (the release lock lives there) is 0755\|STATE_DIR and every parent are root-owned' "$SETUP_SRC")" 2
+check "the state directory is the lock's directory" "$(grep -c '^STATE_DIR=/var/lib/shopnest$' "$SETUP_SRC")" 1
+
 echo "== syntax"
 if bash -n "$WRAPPER_SRC" && bash -n "$SETUP_SRC" && bash -n "$ENTRY_SRC"; then ok "bash -n on the wrapper, the setup script and the entry point"; else bad "bash -n failed"; fi
 
