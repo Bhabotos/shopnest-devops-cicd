@@ -11,3 +11,4 @@ deploy/db/init/* text eol=lf
 
 # The pinned RDS CA bundle is verified by its SHA-256 (backend/certs/README.md): never rewrite its line endings.
 backend/certs/*.pem -text
+*.tftpl text eol=lf
