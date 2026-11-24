@@ -189,6 +189,102 @@ contains "the rollback is logged" "$SHOPNEST_HOME/logs/rollback-staging-$A.log" 
 rollback "$CO_C" staging "$C"; check "a release that was never deployed cannot be rolled back to" $? 1
 contains "the refusal names the history" "$W/out" "not in the release history as deployed"
 
+echo "== 8. staging-only, one-shot fault injection (Part G: automatic rollback of a release that fails its post-switch check)"
+THIS_UID="$(id -u)"
+export BG_FAULT_OWNER_UID="$THIS_UID"   # the offline tests do not run as root; on the instance the owner must be root (uid 0)
+FAULT_LINE='FAULT=post-switch-unhealthy'
+arm() { mkdir -p "$SHOPNEST_HOME/$1"; printf '%s\n' "${2:-$FAULT_LINE}" > "$SHOPNEST_HOME/$1/fault.env"; chmod 600 "$SHOPNEST_HOME/$1/fault.env" 2> /dev/null || true; }
+has_fault() { [ -e "$SHOPNEST_HOME/$1/fault.env" ] && echo yes || echo no; }
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+arm staging
+deploy "$CO_B" staging "$B"; check "an armed fault makes the staging deploy fail with the previous release serving (exit 1, never 3)" $? 1
+check "the fault file is consumed and removed" "$(has_fault staging)" no
+contains "the log says the fault was armed for B" "$W/out" "FAULT INJECTION (staging test): armed for release $B"
+contains "the log says the post-switch verification failed" "$W/out" "post-switch verification FAILED"
+contains "the log says the failure was injected" "$W/out" "this failure was INJECTED by the staging fault file"
+contains "the log records the automatic rollback" "$W/out" "previous release $A is live again (automatic rollback complete)"
+check "traffic is back on A (the previous release)" "$(served)" "blue $A"
+check "A is the active colour again" "$(state staging active)" blue
+check "the history records the failure and the automatic rollback" "$(grep -c " staging $B failed post-switch verification failed; automatic rollback to $A (restored=1)" "$SHOPNEST_HOME/staging/state/history.log")" 1
+check "B was never recorded as deployed" "$(grep -c " $B deployed " "$SHOPNEST_HOME/staging/state/history.log")" 0
+check "last good is still A" "$(state staging last_good)" "$A"
+deploy "$CO_B" staging "$B"; check "the fault is one-shot: the next deploy of B succeeds" $? 0
+check "B is live on green" "$(served)" "green $B"
+
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" production "$A"
+arm production
+deploy "$CO_B" production "$B"; check "production never reads the fault file: the deploy succeeds" $? 0
+check "the fault file is untouched in production" "$(has_fault production)" yes
+absent "production logs no fault injection" "$W/out" "FAULT INJECTION"
+check "B is live in production" "$(served)" "green $B"
+
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+arm staging
+deploy "$CO_A" staging "$A"; check "the very first deploy is never sabotaged (no previous release)" $? 0
+check "the file is left in place for a later deploy" "$(has_fault staging)" yes
+contains "the log says why" "$W/out" "no previous release to fall back to"
+
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+deploy "$CO_B" staging "$B"
+arm staging
+echo "$A" > "$FAKE/load-tag"
+rollback "$CO_B" staging "$A"; check "a rollback is never sabotaged by the fault file" $? 0
+check "the fault file is left untouched by a rollback" "$(has_fault staging)" yes
+contains "the log says a rollback is not a deploy" "$W/out" "this is a manual rollback and not a deploy"
+check "traffic is on A after the rollback" "$(served)" "blue $A"
+
+for case_name in content owner; do
+  new_world
+  make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+  make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+  deploy "$CO_A" staging "$A"
+  case "$case_name" in
+    content) arm staging "FAULT=something-else" ;;
+    owner) arm staging; export BG_FAULT_OWNER_UID=999999 ;;
+  esac
+  deploy "$CO_B" staging "$B"; check "an invalid fault file ($case_name) is ignored: the deploy succeeds" $? 0
+  check "the invalid fault file ($case_name) is left in place" "$(has_fault staging)" yes
+  contains "the log says the fault file was ignored ($case_name)" "$W/out" "fault file ignored"
+  export BG_FAULT_OWNER_UID="$THIS_UID"
+done
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+arm staging "FAULT=post-switch-unhealthy
+FAULT=extra-line"
+deploy "$CO_B" staging "$B"; check "a fault file with extra lines is ignored" $? 0
+if [ "$MODE_OK" = 1 ]; then
+  new_world
+  make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+  make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+  deploy "$CO_A" staging "$A"
+  arm staging; chmod 666 "$SHOPNEST_HOME/staging/fault.env"
+  deploy "$CO_B" staging "$B"; check "a group- or world-writable fault file is ignored" $? 0
+  check "it is left in place" "$(has_fault staging)" yes
+  new_world
+  make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+  make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+  deploy "$CO_A" staging "$A"
+  printf '%s\n' "$FAULT_LINE" > "$W/real-fault"; chmod 600 "$W/real-fault"; ln -s "$W/real-fault" "$SHOPNEST_HOME/staging/fault.env"
+  deploy "$CO_B" staging "$B"; check "a symbolic link as the fault file is ignored" $? 0
+  contains "the log says it is not a plain file" "$W/out" "not a plain file"
+else
+  echo "SKIP  group-writable and symlink fault files (this filesystem cannot represent them; CI on Linux checks them)"
+fi
+unset BG_FAULT_OWNER_UID
+
 echo
 echo "lab-mode checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

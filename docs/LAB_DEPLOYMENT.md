@@ -66,11 +66,28 @@ Exit codes: `0` deployed and confirmed; `1` failed with the previous release ser
 
 ## Checking staging from outside (`staging-verify`)
 
-The manual `staging-verify` workflow opens a Systems Manager port-forward to the staging nginx (loopback port 8081 on the instance) with the staging role, no SSH key. Mode `verify` checks the frontend, `/health`, `/version` (optionally against an expected commit) and a database-backed `/api/products`; mode `traffic` runs `request-loop.sh` for the Part F evidence while a staging deploy happens. It changes nothing and never touches production.
+The manual `staging-verify` workflow opens a Systems Manager port-forward to the staging nginx (loopback port 8081 on the instance) with the staging role, no SSH key. Mode `verify` checks the frontend, `/health`, that `/version` is **not** exposed on the public origin (it is internal by design; the deploy script reads it inside the host, so the host log is the authoritative record of the running commit) and a database-backed `/api/products`; mode `traffic` runs `request-loop.sh` for the Part F evidence while a staging deploy happens. It changes nothing and never touches production.
 
 ## Rollback (`rollback.yml`)
 
 A manual workflow: choose `staging` or `production` and a full commit SHA that was **deployed earlier**. It is refused (not skipped) while `CD_ENABLED` is not `true`, from any ref other than `main`, or for an unknown environment. The target must be an ancestor of `main` (checked in the workflow) and must appear as `deployed` in the release history on the host (checked by `rollback.sh`). The scripts that run as root come from the **tip of `main`** (the wrapper refuses an older carrier commit); the target is started on the idle colour and must pass the **same validation as a deploy** before traffic moves. If the host lost the images it pulls the recorded digests again from GHCR. A rollback **never runs migrations**. A production rollback waits for the same reviewer approval.
+
+## Part G demonstrations (staging only)
+
+**Automatic rollback with a deliberately unhealthy staging release.** `bg_release` already returns traffic to the previous release when the post-switch verification fails. To provoke that for real without putting broken code on `main`, staging has a one-shot fault (`bg_fault_arm` in `deploy/scripts/lib/bluegreen-lib.sh`, tested in `deploy/tests/lab-mode.test.sh` section 8):
+
+1. **Arm it** (only a person with a root shell on the instance can; the deploy user and the workflows cannot create the file). In a Session Manager session:
+   ```bash
+   printf 'FAULT=post-switch-unhealthy
+' | sudo tee /opt/shopnest/staging/fault.env > /dev/null
+   sudo chown root:root /opt/shopnest/staging/fault.env && sudo chmod 600 /opt/shopnest/staging/fault.env
+   ```
+2. **Trigger a staging deploy** (merge any small pull request to `main`, or re-run the latest successful CI run on `main`). The deploy starts the new colour, validates it, switches traffic, and then the fault consumes itself: the file is deleted, the new release's post-switch verification is reported as failed, and the real automatic rollback returns traffic to the previous release and verifies it. The workflow job ends with exit 1 ("the deploy failed; the previous release is still serving"), and the production job never runs (`needs: deploy-staging`).
+3. **Evidence**: the failed CD run, its `deploy-log-staging-...` artifact (it contains `FAULT INJECTION (staging test): armed for release ...`, `post-switch verification FAILED`, `previous release ... is live again (automatic rollback complete)`), and a `staging-verify` run showing staging healthy on the previous release.
+
+Safety rules, enforced in code and tested: staging only (production never reads the file); a **deploy** only (a rollback never arms it); never on the first deploy (there must be a previous release); the file must be a plain root-owned file, not writable by group or others, with exactly that line, otherwise it is ignored and left in place; it is removed when armed (one shot); real traffic never sees a broken backend because the failure is injected into the verification, not into the containers.
+
+**Manual rollback.** Actions -> `Rollback` -> environment `staging`, `sha` = a release that appears as deployed in the history (for example the first deployed commit). It must be an ancestor of `main`, it is checked against the host's release history, the recorded image digests are pulled again if the host lost them, and the target must pass the same health and version validation as a deploy before traffic moves. No migration runs. Afterwards re-run the latest successful CI run on `main` to put staging back on the newest release.
 
 ## Host prerequisites (once, on the instance, as root)
 
@@ -131,7 +148,7 @@ To look at staging (not public): `aws ssm start-session --target <instance id> -
 From your own machine, against the staging port forward (or the production URL), while a deploy runs:
 
 ```bash
-bash deploy/scripts/request-loop.sh --url "http://127.0.0.1:8081/health" --version-url "http://127.0.0.1:8081/version" --seconds 180 --interval 0.1   --log docs/evidence/zero-downtime/request-loop.log --json docs/evidence/zero-downtime/summary.json &
+bash deploy/scripts/request-loop.sh --url "http://127.0.0.1:8081/health" --seconds 180 --interval 0.1   --log docs/evidence/zero-downtime/request-loop.log --json docs/evidence/zero-downtime/summary.json &
 # merge a change to main, wait for the staging deploy to finish, then read the SUMMARY line
 ```
 
