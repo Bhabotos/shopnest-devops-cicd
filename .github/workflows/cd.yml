@@ -1,27 +1,26 @@
 name: CD
 
-# Continuous delivery to STAGING on AWS: runs only after the CI workflow has SUCCEEDED for a push to main.
-# Design: docs/AWS_STAGING_INTEGRATION.md.
+# Continuous delivery to the LAB instance (infra/lab): runs only after the CI workflow has SUCCEEDED for a push to main.
+# Design: infra/lab/README.md and docs/LAB_DEPLOYMENT.md.
 #
-#   package         build the backend image and ONE release bundle (scripts, settings, frontend build) for this exact commit
-#   deploy-staging  1. push the image to ECR under an immutable tag and read back its DIGEST
-#                   2. run the database migrations in the CodeBuild migrator, inside that very image. If they fail, NOTHING is
-#                      deployed (the job stops here). The schema is never reversed automatically.
-#                   3. upload the bundle to S3 (this environment's prefix)
-#                   4. tell the application instance to deploy it, through Systems Manager (no SSH, no inbound port): it verifies
-#                      the bundle's SHA-256 before extracting, pulls the image BY DIGEST, proves the metadata-service isolation,
-#                      then runs the blue/green deploy with automatic rollback. Exit codes 0, 1 and 3 come back unchanged.
+#   gate               confirm CI succeeded for the exact commit, and that it is still the tip of main
+#   publish-images     build the backend and frontend images for that commit, push both to GHCR tagged with the commit SHA, read
+#                      back their DIGESTS, and prove the packages can be pulled anonymously (the host has no registry credential)
+#   deploy-staging     Environment `staging`: SSH to the instance through an AWS Systems Manager port-forwarding tunnel (the instance
+#                      has no inbound port 22) as an unprivileged user that can only start a root-owned wrapper, which fetches the
+#                      commit, pulls both images by digest, runs the migrations and does the blue/green deploy with automatic rollback
+#   deploy-production  Environment `production`: the SAME steps for production, after staging deployed. GitHub holds this job until a
+#                      required reviewer approves it (configured in the Environment's protection rules, see docs/GITHUB_SETUP.md)
 #
-# No credentials are stored: the deploy job exchanges its short-lived GitHub OIDC token for the deploy role's temporary
-# credentials. There are no GitHub secrets. It reads these NON-secret variables from the `staging` GitHub Environment (they are
-# set separately, with approval; none exists yet):
-#   AWS_ROLE_ARN, AWS_REGION, ECR_REPOSITORY, ARTIFACT_BUCKET, MIGRATOR_PROJECT, SSM_DEPLOY_DOCUMENT, STAGING_INSTANCE_ID
+# No AWS credential is stored. The images are pushed with the run's own short-lived GITHUB_TOKEN, and a deploy job exchanges its
+# short-lived GitHub OIDC token for its Environment's role (which can only open a port-forwarding session to the lab instance). The ONE
+# secret is each Environment's own SSH private key (staging and production use different keys; on the host each key is bound to its
+# environment). Settings read from each Environment (set separately, with approval):
+#   secret    DEPLOY_SSH_KEY
+#   variables AWS_ROLE_ARN, AWS_REGION, LAB_INSTANCE_ID, SSH_HOST_KEY (the instance's PUBLIC host key, pinned: no StrictHostKeyChecking=no)
 #
-# STATUS: written and tested offline only (deploy/ci/*.sh and their tests, actionlint); it has NEVER run against AWS. Nothing here
-# runs until the repository variable CD_ENABLED is set to "true" (a deliberate, separate step), so merging this file cannot start
-# a deployment. Production is NOT deployed by this workflow (no production infrastructure exists); its last job is only an approval
-# gate bound to the `production` Environment (see that job). Manual
-# rollback is the separate rollback.yml workflow.
+# STATUS: written and tested offline only; it has NEVER run against AWS. Nothing here runs until the repository variable CD_ENABLED is
+# set to "true" (a deliberate, separate step), so merging this file cannot start a deployment. Manual rollback is rollback.yml.
 on:
   workflow_run:
     workflows: [CI]
@@ -72,128 +71,128 @@ jobs:
             echo "- Deploy: ${deploy}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  package:
-    name: Package release
+  publish-images:
+    name: Build and publish images (GHCR)
     needs: gate
     if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
-      actions: read
+      packages: write
     env:
       RELEASE_SHA: ${{ needs.gate.outputs.sha }}
     outputs:
-      bundle_sha256: ${{ steps.bundle.outputs.sha256 }}
+      backend_ref: ${{ steps.publish.outputs.backend_ref }}
+      frontend_ref: ${{ steps.publish.outputs.frontend_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
-      - name: Download the frontend build produced by CI
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: frontend-dist-node24
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
-          path: frontend-dist
-      - name: Build the backend image for this exact commit
+      - name: Sign in to GHCR with the run's own token (no stored credential)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          docker build \
-            --label "org.opencontainers.image.revision=${RELEASE_SHA}" \
-            --tag "shopnest-backend:${RELEASE_SHA}" backend
-          mkdir -p upload
-          docker save "shopnest-backend:${RELEASE_SHA}" | gzip -9 > upload/backend-image.tar.gz
-      - name: Build the release bundle (explicit file list; refuses a broken frontend)
-        id: bundle
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build both images for this exact commit, push them, and read back their digests
+        id: publish
         run: |
           set -euo pipefail
-          bash deploy/ci/build-bundle.sh --mode release --sha "$RELEASE_SHA" --frontend-dist frontend-dist --out upload
-          echo "sha256=$(cat upload/bundle.sha256)" >> "$GITHUB_OUTPUT"
-      - name: Upload the release artifacts for the deploy job
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-${{ needs.gate.outputs.sha }}
-          path: upload
-          if-no-files-found: error
-          retention-days: 30
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          for kind in backend frontend; do
+            image="ghcr.io/${owner}/shopnest-${kind}"
+            docker build \
+              --label "org.opencontainers.image.revision=${RELEASE_SHA}" \
+              --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+              --tag "${image}:${RELEASE_SHA}" "$kind"
+            docker push "${image}:${RELEASE_SHA}"
+            ref="$(docker image inspect "${image}:${RELEASE_SHA}" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep "^${image}@sha256:" | head -n 1)"
+            [[ "$ref" =~ ^ghcr\.io/[a-z0-9][a-z0-9-]*/shopnest-(backend|frontend)@sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest was reported for the ${kind} image"; exit 1; }
+            echo "${kind}_ref=${ref}" >> "$GITHUB_OUTPUT"
+          done
+      # The instance pulls with no credential. A package GitHub created private (the first push does that) must be made Public once,
+      # by the repository owner, in the package settings. Fail HERE, clearly, rather than on the instance.
+      - name: Check that both packages can be pulled anonymously
+        env:
+          BACKEND_REF: ${{ steps.publish.outputs.backend_ref }}
+          FRONTEND_REF: ${{ steps.publish.outputs.frontend_ref }}
+        run: |
+          set -euo pipefail
+          for ref in "$BACKEND_REF" "$FRONTEND_REF"; do
+            repo="${ref#ghcr.io/}"
+            repo="${repo%@*}"
+            digest="${ref#*@}"
+            token="$(curl -fsS "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" | jq -r .token)"
+            code="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer ${token}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${repo}/manifests/${digest}")"
+            if [ "$code" != "200" ]; then
+              echo "::error::${repo} cannot be pulled anonymously (HTTP ${code}). Make the package Public in its GitHub package settings (one time), then re-run this workflow."
+              exit 1
+            fi
+          done
+          {
+            echo "### Images (GHCR, by digest)"
+            echo "- Release: \`${RELEASE_SHA}\`"
+            echo "- Backend: \`${BACKEND_REF}\`"
+            echo "- Frontend: \`${FRONTEND_REF}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-staging:
     name: Deploy to staging
-    needs: [gate, package]
+    needs: [gate, publish-images]
     runs-on: ubuntu-latest
-    # Image push, migrations, upload and the deploy itself (the SSM command is limited to 20 minutes).
-    timeout-minutes: 60
+    # The deploy script is bounded on the host; this is the ceiling for the whole job.
+    timeout-minutes: 40
     environment: staging
     permissions:
       contents: read
       id-token: write
     concurrency:
-      group: deploy-staging
+      # One lab instance: deploys and rollbacks, staging and production, never overlap.
+      group: deploy-lab
       cancel-in-progress: false
     env:
       RELEASE_SHA: ${{ needs.gate.outputs.sha }}
-      BUNDLE_SHA256: ${{ needs.package.outputs.bundle_sha256 }}
+      BACKEND_REF: ${{ needs.publish-images.outputs.backend_ref }}
+      FRONTEND_REF: ${{ needs.publish-images.outputs.frontend_ref }}
       AWS_REGION: ${{ vars.AWS_REGION }}
-      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-      ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
-      MIGRATOR_PROJECT: ${{ vars.MIGRATOR_PROJECT }}
-      SSM_DEPLOY_DOCUMENT: ${{ vars.SSM_DEPLOY_DOCUMENT }}
-      STAGING_INSTANCE_ID: ${{ vars.STAGING_INSTANCE_ID }}
+      LAB_INSTANCE_ID: ${{ vars.LAB_INSTANCE_ID }}
+      SSH_HOST_KEY: ${{ vars.SSH_HOST_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
-      - name: Download the release artifacts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-${{ needs.gate.outputs.sha }}
-          path: upload
-      - name: Check the settings and the bundle before touching AWS
+      - name: Check the settings before touching AWS
         run: |
           set -euo pipefail
-          for name in AWS_REGION ECR_REPOSITORY ARTIFACT_BUCKET MIGRATOR_PROJECT SSM_DEPLOY_DOCUMENT STAGING_INSTANCE_ID BUNDLE_SHA256; do
-            [ -n "${!name}" ] || { echo "::error::$name is not set (a staging Environment variable, or the package job's output)"; exit 1; }
+          for name in AWS_REGION LAB_INSTANCE_ID SSH_HOST_KEY BACKEND_REF FRONTEND_REF; do
+            [ -n "${!name}" ] || { echo "::error::$name is not set (a staging Environment variable, or the publish job's output)"; exit 1; }
           done
-          [[ "$BUNDLE_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the package job did not report a valid bundle hash"; exit 1; }
-          # The bundle that is about to be uploaded must be exactly the one the package job built.
-          echo "${BUNDLE_SHA256}  upload/bundle.tar.gz" | sha256sum --check --strict
+      # Installed BEFORE the AWS credentials exist: the package is only a checksum-verified download, and it never runs with them.
+      - name: Install the Session Manager plugin (pinned version, checksum verified)
+        run: bash deploy/ci/install-ssm-plugin.sh
       - name: Configure AWS credentials (OIDC, short-lived)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 3600
-      - name: Push the image to ECR and read back its digest
-        id: image
-        run: |
-          set -euo pipefail
-          bash deploy/ci/push-image.sh --image-tar upload/backend-image.tar.gz --repository "$ECR_REPOSITORY" --sha "$RELEASE_SHA" --region "$AWS_REGION"
-      # A failed migration FAILS this step, and every later step is skipped: nothing is deployed.
-      - name: Apply the database migrations (CodeBuild migrator, inside the release image)
-        env:
-          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
-        run: |
-          set -euo pipefail
-          bash deploy/ci/run-codebuild.sh --project "$MIGRATOR_PROJECT" --image-ref "$IMAGE_REF" --release-sha "$RELEASE_SHA" --region "$AWS_REGION"
-      - name: Upload the release bundle to S3
-        run: |
-          set -euo pipefail
-          aws s3 cp upload/bundle.tar.gz "s3://${ARTIFACT_BUCKET}/deploy/staging/${RELEASE_SHA}/bundle.tar.gz" --region "$AWS_REGION" --only-show-errors
-      - name: Deploy on the instance (Systems Manager, no SSH)
+          mask-aws-account-id: true
+      - name: Deploy on the instance (SSH through an SSM tunnel)
         id: deploy
         env:
-          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -uo pipefail
           rc=0
-          bash deploy/ci/run-ssm-command.sh \
-            --document "$SSM_DEPLOY_DOCUMENT" --instance "$STAGING_INSTANCE_ID" --region "$AWS_REGION" \
-            --timeout 1200 --max-wait 1500 --log-file deploy-log.txt -- \
-            "Sha=${RELEASE_SHA}" "ImageRef=${IMAGE_REF}" \
-            "BundleKey=deploy/staging/${RELEASE_SHA}/bundle.tar.gz" "BundleSha256=${BUNDLE_SHA256}" || rc=$?
+          bash deploy/ci/ssh-deploy.sh deploy --environment staging --instance "$LAB_INSTANCE_ID" --region "$AWS_REGION" \
+            --sha "$RELEASE_SHA" --image-ref "$BACKEND_REF" --frontend-ref "$FRONTEND_REF" --seed \
+            --log-file deploy-log.txt || rc=$?
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           case "$rc" in
             0) ;;
@@ -202,6 +201,9 @@ jobs:
             *) echo "::error::The deploy result could not be confirmed (exit $rc). Treat it as failed and check the instance." ;;
           esac
           exit "$rc"
+      - name: Make sure no tunnel is left behind
+        if: always()
+        run: pkill -f AWS-StartPortForwardingSession || true
       - name: Upload the deployment log
         if: always() && hashFiles('deploy-log.txt') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -212,42 +214,101 @@ jobs:
       - name: Summary
         if: always()
         env:
-          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
           EXIT_CODE: ${{ steps.deploy.outputs.exit_code }}
         run: |
           {
             echo "### Staging deploy"
             echo "- Release: \`${RELEASE_SHA}\`"
-            echo "- Image (by digest): \`${IMAGE_REF:-not pushed}\`"
-            echo "- Bundle SHA-256: \`${BUNDLE_SHA256}\`"
+            echo "- Backend image (by digest): \`${BACKEND_REF}\`"
+            echo "- Frontend image (by digest): \`${FRONTEND_REF}\`"
             echo "- Result code: \`${EXIT_CODE:-not reached}\` (0 deployed; 1 failed, previous release serving; 3 failed and recovery failed; 4 unconfirmed)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # PRODUCTION APPROVAL GATE. This job is bound to the `production` GitHub Environment, so GitHub pauses it until a required reviewer
-  # approves (the Environment's protection rules are configured in GitHub settings, not here: see docs/GITHUB_SETUP.md; until they are
-  # configured and tested, approval is NOT verified). WARNING: GitHub creates a missing Environment on first use WITHOUT any protection
-  # rule, and then this job would run at once: create `production` with its required reviewer BEFORE setting CD_ENABLED. It runs only after staging deployed successfully, which also means only after CD_ENABLED,
-  # a successful CI run on main and the latest commit were confirmed by `gate`.
-  #
-  # It does NOT deploy anything: no production infrastructure exists and a production deploy job is not implemented. It has no
-  # permissions, no `id-token` (so it cannot obtain AWS credentials), no checkout and no AWS step; and the deploy role's trust policy
-  # accepts only the staging subject. A future production deploy job must `needs: production-approval`, bind `environment: production`
-  # itself, and use a role whose trust policy lists the production subject (and only that).
-  production-approval:
-    name: Production approval gate (nothing is deployed)
-    needs: [gate, deploy-staging]
+  # PRODUCTION. Bound to the `production` GitHub Environment: GitHub pauses this job until a required reviewer approves it (the protection
+  # rules are configured in GitHub settings, not here). WARNING: GitHub creates a missing Environment on first use WITHOUT any protection
+  # rule, and then this job would run at once: keep `production` configured with its required reviewer BEFORE setting CD_ENABLED.
+  # It runs only after staging deployed successfully (which also means CD_ENABLED, a successful CI run and the latest commit were
+  # confirmed by `gate`). Its AWS role trusts only the production Environment's subject and can only open a port-forwarding session
+  # to the lab instance; its SSH key differs from staging's and, on the host, that key is bound to production.
+  deploy-production:
+    name: Deploy to production (requires approval)
+    needs: [gate, publish-images, deploy-staging]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 40
     environment: production
-    permissions: {}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-lab
+      cancel-in-progress: false
+    env:
+      RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+      BACKEND_REF: ${{ needs.publish-images.outputs.backend_ref }}
+      FRONTEND_REF: ${{ needs.publish-images.outputs.frontend_ref }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      LAB_INSTANCE_ID: ${{ vars.LAB_INSTANCE_ID }}
+      SSH_HOST_KEY: ${{ vars.SSH_HOST_KEY }}
     steps:
-      - name: Record that production was approved and that nothing was deployed
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - name: Check the settings before touching AWS
+        run: |
+          set -euo pipefail
+          for name in AWS_REGION LAB_INSTANCE_ID SSH_HOST_KEY BACKEND_REF FRONTEND_REF; do
+            [ -n "${!name}" ] || { echo "::error::$name is not set (a production Environment variable, or the publish job's output)"; exit 1; }
+          done
+      # Installed BEFORE the AWS credentials exist: the package is only a checksum-verified download, and it never runs with them.
+      - name: Install the Session Manager plugin (pinned version, checksum verified)
+        run: bash deploy/ci/install-ssm-plugin.sh
+      - name: Configure AWS credentials (OIDC, short-lived)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+      # The production catalogue is never seeded by a deploy (no --seed): loading demo data into production is an explicit operator
+      # choice (docs/LAB_DEPLOYMENT.md).
+      - name: Deploy on the instance (SSH through an SSM tunnel)
+        id: deploy
         env:
-          RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -uo pipefail
+          rc=0
+          bash deploy/ci/ssh-deploy.sh deploy --environment production --instance "$LAB_INSTANCE_ID" --region "$AWS_REGION" \
+            --sha "$RELEASE_SHA" --image-ref "$BACKEND_REF" --frontend-ref "$FRONTEND_REF" \
+            --log-file deploy-log.txt || rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          case "$rc" in
+            0) ;;
+            1) echo "::error::The deploy failed; the previous release is still serving (exit 1)." ;;
+            3) echo "::error::CRITICAL: the deploy failed AND the automatic rollback failed (exit 3). Production may be serving a release that did not verify." ;;
+            *) echo "::error::The deploy result could not be confirmed (exit $rc). Treat it as failed and check the instance." ;;
+          esac
+          exit "$rc"
+      - name: Make sure no tunnel is left behind
+        if: always()
+        run: pkill -f AWS-StartPortForwardingSession || true
+      - name: Upload the deployment log
+        if: always() && hashFiles('deploy-log.txt') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deploy-log-production-${{ needs.gate.outputs.sha }}
+          path: deploy-log.txt
+          retention-days: 30
+      - name: Summary
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.deploy.outputs.exit_code }}
         run: |
           {
-            echo "### Production approval"
-            echo "- Release: \`${RELEASE_SHA}\` (already deployed to staging)"
-            echo "- This job is bound to the \`production\` Environment: if it has required reviewers, GitHub held this job until one approved it."
-            echo "- **Production deployment is not implemented: nothing was deployed or changed in production.**"
+            echo "### Production deploy"
+            echo "- Release: \`${RELEASE_SHA}\` (deployed to staging first; approved by the production Environment's reviewer)"
+            echo "- Backend image (by digest): \`${BACKEND_REF}\`"
+            echo "- Frontend image (by digest): \`${FRONTEND_REF}\`"
+            echo "- Result code: \`${EXIT_CODE:-not reached}\` (0 deployed; 1 failed, previous release serving; 3 failed and recovery failed; 4 unconfirmed)"
           } >> "$GITHUB_STEP_SUMMARY"

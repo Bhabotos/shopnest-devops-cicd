@@ -1,32 +1,35 @@
 name: Rollback
 
-# Manual rollback of STAGING to a release that was deployed earlier (assignment Part G), through Systems Manager: no SSH, no inbound
-# port, no stored credential. Design: docs/AWS_STAGING_INTEGRATION.md.
+# Manual rollback of STAGING or PRODUCTION on the lab instance to a release that was deployed earlier (assignment Part G), over SSH
+# through an AWS Systems Manager port-forwarding tunnel (no inbound port 22, no stored AWS credential; the SSH key is the chosen
+# Environment's own secret). Design: infra/lab/README.md and docs/LAB_DEPLOYMENT.md.
 #
 # It FAILS CLOSED rather than being ignored:
-#   - a request for production is refused (production rollback is not implemented: no production infrastructure exists);
 #   - a request while the repository variable CD_ENABLED is not "true" is refused, not silently skipped;
-#   - a request from any ref other than main is refused.
+#   - a request from any ref other than main is refused;
+#   - an environment other than staging or production is refused.
 #
-# The rollback itself is deploy/scripts/rollback.sh on the instance, run from a small "carrier" bundle of the CURRENT main tooling
-# (scripts and settings only; its S3 key is derived from its own content, so it can never overwrite a release bundle). That script
-# refuses a release that is not recorded as deployed, pulls the recorded image DIGEST again if the host lost it, restores the
-# recorded frontend files from S3 after verifying their SHA-256, starts the release on the idle colour, requires /health OK and
-# /version == the SHA, and only then moves traffic. It NEVER runs migrations, so it NEVER reverses the database schema: a schema
-# problem is fixed forward, or by a point-in-time restore.
+# The job is bound to the Environment that was chosen, so a PRODUCTION rollback is held until the production Environment's required
+# reviewer approves it, exactly like a production deploy, and it uses that Environment's own role and variables.
 #
-# Non-secret variables read from the `staging` GitHub Environment (set separately, with approval; none exists yet):
-#   AWS_ROLE_ARN, AWS_REGION, ARTIFACT_BUCKET, SSM_ROLLBACK_DOCUMENT, STAGING_INSTANCE_ID
+# The rollback itself is deploy/scripts/rollback.sh on the instance, run from the CURRENT main tooling (fetched at that commit). It
+# refuses a release that is not recorded as deployed, pulls the recorded image DIGESTS again if the host lost them, starts the release
+# on the idle colour, requires /health OK and /version == the SHA, and only then moves traffic. It NEVER runs migrations, so it NEVER
+# reverses the database schema: a schema problem is fixed forward, or by restoring a backup.
+#
+# Settings read from the chosen Environment (set separately, with approval):
+#   secret    DEPLOY_SSH_KEY
+#   variables AWS_ROLE_ARN, AWS_REGION, LAB_INSTANCE_ID, SSH_HOST_KEY (the instance's PUBLIC host key, pinned)
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: Environment to roll back (only staging is implemented; production is refused)
+        description: Environment to roll back (production needs the reviewer's approval)
         type: choice
         required: true
         options: [staging, production]
       sha:
-        description: Full 40-character commit SHA of an earlier release (must appear as deployed in the release history)
+        description: Full 40-character commit SHA of an earlier release (must appear as deployed in the release history on the host)
         type: string
         required: true
 
@@ -47,11 +50,7 @@ jobs:
           GIT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          if [ "$TARGET_ENV" = "production" ]; then
-            echo "::error::Refused: a production rollback is not implemented (no production infrastructure exists). Nothing was changed."
-            exit 1
-          fi
-          [ "$TARGET_ENV" = "staging" ] || { echo "::error::Refused: environment must be staging."; exit 1; }
+          case "$TARGET_ENV" in staging | production) ;; *) echo "::error::Refused: environment must be staging or production."; exit 1 ;; esac
           if [ "$CD_ENABLED" != "true" ]; then
             echo "::error::Refused: CD is disabled (CD_ENABLED is not true). A rollback request is refused, never silently ignored."
             exit 1
@@ -69,6 +68,7 @@ jobs:
       - name: Check the inputs and the commit
         env:
           GH_TOKEN: ${{ github.token }}
+          TARGET_ENV: ${{ inputs.environment }}
           TARGET_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
@@ -81,31 +81,32 @@ jobs:
           esac
           {
             echo "### Rollback request"
-            echo "- Environment: \`staging\`"
+            echo "- Environment: \`${TARGET_ENV}\`"
             echo "- Target release: \`${TARGET_SHA}\`"
             echo "- Requested by: ${GITHUB_ACTOR}"
             echo "- Tooling from main at \`${GITHUB_SHA}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   rollback:
-    name: Roll back staging
+    name: Roll back (staging, or production after approval)
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: staging
+    # Dynamic on purpose: the chosen Environment's protection rules, variables and OIDC subject all apply.
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
     concurrency:
-      # The same group as cd.yml, so a deploy and a rollback never overlap.
-      group: deploy-staging
+      # The same group as cd.yml: one lab instance, so a deploy and a rollback never overlap.
+      group: deploy-lab
       cancel-in-progress: false
     env:
+      TARGET_ENV: ${{ inputs.environment }}
       TARGET_SHA: ${{ inputs.sha }}
       AWS_REGION: ${{ vars.AWS_REGION }}
-      ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
-      SSM_ROLLBACK_DOCUMENT: ${{ vars.SSM_ROLLBACK_DOCUMENT }}
-      STAGING_INSTANCE_ID: ${{ vars.STAGING_INSTANCE_ID }}
+      LAB_INSTANCE_ID: ${{ vars.LAB_INSTANCE_ID }}
+      SSH_HOST_KEY: ${{ vars.SSH_HOST_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,43 +114,28 @@ jobs:
       - name: Check the settings
         run: |
           set -euo pipefail
-          for name in AWS_REGION ARTIFACT_BUCKET SSM_ROLLBACK_DOCUMENT STAGING_INSTANCE_ID; do
-            [ -n "${!name}" ] || { echo "::error::$name is not set (a staging Environment variable)"; exit 1; }
+          for name in AWS_REGION LAB_INSTANCE_ID SSH_HOST_KEY; do
+            [ -n "${!name}" ] || { echo "::error::$name is not set (a variable of the ${TARGET_ENV} Environment)"; exit 1; }
           done
-      - name: Build the carrier bundle (rollback tooling from main; no frontend, no image)
-        id: carrier
-        run: |
-          set -euo pipefail
-          bash deploy/ci/build-bundle.sh --mode carrier --sha "$GITHUB_SHA" --out carrier
-          hash="$(cat carrier/bundle.sha256)"
-          # The carrier's S3 key is derived from its own content: it can never overwrite a release bundle.
-          echo "sha256=${hash}" >> "$GITHUB_OUTPUT"
-          echo "id=${hash:0:40}" >> "$GITHUB_OUTPUT"
+      # Installed BEFORE the AWS credentials exist: the package is only a checksum-verified download, and it never runs with them.
+      - name: Install the Session Manager plugin (pinned version, checksum verified)
+        run: bash deploy/ci/install-ssm-plugin.sh
       - name: Configure AWS credentials (OIDC, short-lived)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 3600
-      - name: Upload the carrier bundle to S3
-        env:
-          CARRIER_ID: ${{ steps.carrier.outputs.id }}
-        run: |
-          set -euo pipefail
-          aws s3 cp carrier/bundle.tar.gz "s3://${ARTIFACT_BUCKET}/deploy/staging/${CARRIER_ID}/bundle.tar.gz" --region "$AWS_REGION" --only-show-errors
-      - name: Roll back on the instance (Systems Manager, no SSH, no migrations)
+          mask-aws-account-id: true
+      - name: Roll back on the instance (SSH through an SSM tunnel, no migrations)
         id: rollback
         env:
-          CARRIER_ID: ${{ steps.carrier.outputs.id }}
-          CARRIER_SHA256: ${{ steps.carrier.outputs.sha256 }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -uo pipefail
           rc=0
-          bash deploy/ci/run-ssm-command.sh \
-            --document "$SSM_ROLLBACK_DOCUMENT" --instance "$STAGING_INSTANCE_ID" --region "$AWS_REGION" \
-            --timeout 1200 --max-wait 1500 --log-file rollback-log.txt -- \
-            "TargetSha=${TARGET_SHA}" "CarrierSha=${CARRIER_ID}" \
-            "CarrierBundleKey=deploy/staging/${CARRIER_ID}/bundle.tar.gz" "CarrierBundleSha256=${CARRIER_SHA256}" || rc=$?
+          bash deploy/ci/ssh-deploy.sh rollback --environment "$TARGET_ENV" --instance "$LAB_INSTANCE_ID" --region "$AWS_REGION" \
+            --sha "$TARGET_SHA" --carrier-sha "$GITHUB_SHA" --log-file rollback-log.txt || rc=$?
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           case "$rc" in
             0) ;;
@@ -158,11 +144,14 @@ jobs:
             *) echo "::error::The rollback result could not be confirmed (exit $rc). Treat it as failed and check the instance." ;;
           esac
           exit "$rc"
+      - name: Make sure no tunnel is left behind
+        if: always()
+        run: pkill -f AWS-StartPortForwardingSession || true
       - name: Upload the rollback log
         if: always() && hashFiles('rollback-log.txt') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rollback-log-staging-${{ github.run_id }}
+          name: rollback-log-${{ inputs.environment }}-${{ github.run_id }}
           path: rollback-log.txt
           retention-days: 30
       - name: Summary
@@ -171,7 +160,7 @@ jobs:
           EXIT_CODE: ${{ steps.rollback.outputs.exit_code }}
         run: |
           {
-            echo "### Staging rollback"
+            echo "### Rollback of ${TARGET_ENV}"
             echo "- Target release: \`${TARGET_SHA}\`"
             echo "- Result code: \`${EXIT_CODE:-not reached}\` (0 rolled back; 1 failed, release unchanged or restored; 3 failed and recovery failed; 4 unconfirmed)"
             echo "- The database schema was NOT changed: a rollback never runs migrations."

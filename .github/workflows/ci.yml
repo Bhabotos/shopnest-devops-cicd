@@ -301,6 +301,48 @@ jobs:
         # Proves strict host key checking against the pinned key, the pre-flight, the exit codes, and that the tunnel, the SSM session and
         # the key are cleaned up on every path. It does not prove AWS, sshd or the instance: that needs the first real run.
         run: bash deploy/tests/ssh-deploy.test.sh
+      - name: Lab Compose (a PostgreSQL container per environment, internal only, only nginx publishes a port)
+        env:
+          # Throwaway placeholders that exist only for this step; no real secret is involved.
+          ENV_DIR: /tmp/shopnest-ci
+          POSTGRES_PASSWORD: ci0placeholder0aaaa
+          DB_OWNER_PASSWORD: ci0placeholder0bbbb
+          DB_APP_PASSWORD: ci0placeholder0cccc
+        run: |
+          set -euo pipefail
+          for env_name in staging production; do
+            set -a
+            # shellcheck disable=SC1090
+            . <(grep -E '^(EDGE_|NGINX_IP|BACKEND_|HTTP_PORT)' "deploy/env/${env_name}.env")
+            set +a
+            # The deploy script binds production to all addresses and staging to loopback (bg_init, lab mode).
+            if [ "$env_name" = production ]; then bind=0.0.0.0; else bind=127.0.0.1; fi
+            HTTP_BIND="$bind" docker compose -p "lab-${env_name}" -f deploy/docker-compose.prod.yml -f deploy/docker-compose.local-db.yml config --format json > "compose-lab-${env_name}.json"
+            ENV_NAME="$env_name" BIND="$bind" node -e '
+              const c = JSON.parse(require("fs").readFileSync("compose-lab-" + process.env.ENV_NAME + ".json", "utf8"));
+              const bad = [];
+              const names = Object.keys(c.services).sort().join();
+              if (names !== "backend-blue,backend-green,db,migrate,nginx,seed") bad.push("unexpected services: " + names);
+              const published = Object.entries(c.services).filter(([, s]) => (s.ports || []).length).map(([n]) => n);
+              if (published.join() !== "nginx") bad.push("only nginx may publish a port, found: " + published.join());
+              const port = c.services.nginx.ports[0];
+              if (port.host_ip !== process.env.BIND) bad.push("nginx must be bound to " + process.env.BIND + ", is " + port.host_ip);
+              if (String(port.published) !== (process.env.ENV_NAME === "production" ? "80" : "8081")) bad.push("unexpected published port " + port.published);
+              if (!c.networks.internal || c.networks.internal.internal !== true) bad.push("the internal network must be internal: true");
+              if (Object.keys(c.services.db.networks || {}).join() !== "internal") bad.push("db must be on the internal network only");
+              if ((c.services.db.ports || []).length) bad.push("db must publish no port");
+              for (const [name, s] of Object.entries(c.services)) {
+                for (const cfg of Object.values(s.networks || {})) if (cfg && cfg.ipv4_address) bad.push(name + " has a fixed address");
+              }
+              if (bad.length) { console.error(bad.join(" | ")); process.exit(1); }
+              console.log(process.env.ENV_NAME + " lab compose ok: database internal-only and unpublished, only nginx publishes (" + process.env.BIND + ")");
+            '
+          done
+      - name: ShellCheck of the host and CI scripts that handle keys and run as root (warning level, nothing skipped)
+        run: |
+          set -euo pipefail
+          shellcheck --version
+          shellcheck --severity=warning deploy/host/*.sh deploy/ci/ssh-deploy.sh deploy/ci/install-ssm-plugin.sh deploy/tests/host-wrapper.test.sh deploy/tests/ssh-deploy.test.sh
       - name: SSM document scripts pass ShellCheck (static; extracted from the Terraform source)
         # ShellCheck is preinstalled on ubuntu-latest, as for the "ShellCheck" step above.
         run: bash deploy/tests/ssm-scripts.test.sh
@@ -312,6 +354,6 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/yaml-venv"
           "$RUNNER_TEMP/yaml-venv/bin/python" -m pip install --quiet --disable-pip-version-check "pyyaml==6.0.3"
           echo "$RUNNER_TEMP/yaml-venv/bin" >> "$GITHUB_PATH"
-      - name: Deployment workflows are SSM-only, credential-free and fail closed (static)
-        # Replaces the old "SSH steps stay identical" check: there is no SSH any more, so the rule is that none can come back.
+      - name: Deployment workflows use SSH only through the pinned SSM tunnel, keep one secret per environment and fail closed (static)
+        # Replaces the SSM-only check: SSH is back, but only through deploy/ci/ssh-deploy.sh, with host key checking never weakened.
         run: bash deploy/tests/workflows.test.sh
