@@ -66,7 +66,7 @@ Exit codes: `0` deployed and confirmed; `1` failed with the previous release ser
 
 ## Checking staging from outside (`staging-verify`)
 
-The manual `staging-verify` workflow opens a Systems Manager port-forward to the staging nginx (loopback port 8081 on the instance) with the staging role, no SSH key. Mode `verify` checks the frontend, `/health`, `/version` (optionally against an expected commit) and a database-backed `/api/products`; mode `traffic` runs `request-loop.sh` for the Part F evidence while a staging deploy happens. It changes nothing and never touches production.
+The manual `staging-verify` workflow opens a Systems Manager port-forward to the staging nginx (loopback port 8081 on the instance) with the staging role, no SSH key. Mode `verify` checks the frontend, `/health`, that `/version` is **not** exposed on the public origin (it is internal by design; the deploy script reads it inside the host, so the host log is the authoritative record of the running commit) and a database-backed `/api/products`; mode `traffic` runs `request-loop.sh` for the Part F evidence while a staging deploy happens. It changes nothing and never touches production.
 
 ## Rollback (`rollback.yml`)
 
@@ -131,7 +131,7 @@ To look at staging (not public): `aws ssm start-session --target <instance id> -
 From your own machine, against the staging port forward (or the production URL), while a deploy runs:
 
 ```bash
-bash deploy/scripts/request-loop.sh --url "http://127.0.0.1:8081/health" --version-url "http://127.0.0.1:8081/version" --seconds 180 --interval 0.1   --log docs/evidence/zero-downtime/request-loop.log --json docs/evidence/zero-downtime/summary.json &
+bash deploy/scripts/request-loop.sh --url "http://127.0.0.1:8081/health" --seconds 180 --interval 0.1   --log docs/evidence/zero-downtime/request-loop.log --json docs/evidence/zero-downtime/summary.json &
 # merge a change to main, wait for the staging deploy to finish, then read the SUMMARY line
 ```
 

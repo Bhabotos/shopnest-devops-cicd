@@ -2,10 +2,12 @@ name: staging-verify
 
 # Exercises the STAGING environment from outside the instance, through the same Systems Manager port-forwarding the deploy uses (no SSH key,
 # no inbound port, no secret). It opens a tunnel to the staging nginx, which listens only on the instance's loopback address (port 8081), and:
-#   mode verify   checks the frontend, /health, /version (optionally against an expected commit) and a database-backed API call;
+#   mode verify   checks the frontend, /health, that /version is NOT exposed on the public origin (it is internal by design: the deploy script reads
+#                 it inside the host), and a database-backed API call;
 #   mode traffic  runs deploy/scripts/request-loop.sh against /health (and /version) for the given time: start it, then trigger a staging
 #                 deploy while it runs; the saved log, failures, version changes and JSON summary are the Part F zero-downtime evidence.
-# The numbers include the tunnel (GitHub runner -> Systems Manager -> instance), so latencies are higher than a direct request. It changes
+# The running commit is not visible on the public origin (/version is internal): for the release timeline use the deploy log's timestamps
+# ("switching traffic", "is live on green") next to the request log. The numbers include the tunnel (GitHub runner -> Systems Manager -> instance), so latencies are higher than a direct request. It changes
 # nothing on the host and never touches production. Manual start only, from main only; the staging role can only open port-forwarding sessions.
 #
 # Settings read from the staging Environment: variables AWS_ROLE_ARN, AWS_REGION, LAB_INSTANCE_ID.
@@ -18,11 +20,6 @@ on:
         required: true
         default: verify
         options: [verify, traffic]
-      expected_sha:
-        description: verify only, optional - the full commit SHA /version must report
-        type: string
-        required: false
-        default: ""
       seconds:
         description: traffic only - how long to send requests (at most 1500)
         type: string
@@ -53,7 +50,6 @@ jobs:
       cancel-in-progress: false
     env:
       MODE: ${{ inputs.mode }}
-      EXPECTED_SHA: ${{ inputs.expected_sha }}
       SECONDS_TO_RUN: ${{ inputs.seconds }}
       INTERVAL: ${{ inputs.interval }}
       AWS_REGION: ${{ vars.AWS_REGION }}
@@ -69,7 +65,6 @@ jobs:
             [ -n "${!name}" ] || { echo "::error::$name is not set (a variable of the staging Environment)"; exit 1; }
           done
           case "$MODE" in verify | traffic) ;; *) echo "::error::mode must be verify or traffic"; exit 1 ;; esac
-          [[ -z "$EXPECTED_SHA" || "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::expected_sha must be empty or a full 40-character lowercase commit"; exit 1; }
           [[ "$SECONDS_TO_RUN" =~ ^[0-9]{1,4}$ && "$SECONDS_TO_RUN" -ge 5 && "$SECONDS_TO_RUN" -le 1500 ]] || { echo "::error::seconds must be 5 to 1500"; exit 1; }
           [[ "$INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::interval must be a number"; exit 1; }
       # Installed BEFORE the AWS credentials exist: the package is only a checksum-verified download, and it never runs with them.
@@ -132,7 +127,7 @@ jobs:
             code_is_200() { [ "$(cat "$1")" = 200 ]; }
             frontend_ok() { code_is_200 "$OUT/index.code" && grep -qi "<html" "$OUT/index.html"; }
             health_ok() { code_is_200 "$OUT/health.code" && grep -q "status.*ok" "$OUT/health.json"; }
-            version_ok() { code_is_200 "$OUT/version.code"; }
+            version_hidden() { [ "$(cat "$OUT/version.code")" = 404 ]; }
             cat > "$TMP/catalogue.py" << 'PY'
           import json, sys
           code = open(sys.argv[1]).read().strip()
@@ -148,11 +143,7 @@ jobs:
             curl -sS --max-time 10 -o "$OUT/health.json" -w '%{http_code}\n' "$BASE/health" > "$OUT/health.code" 2> /dev/null || true
             check "backend: GET /health returns 200 with status ok" health_ok
             curl -sS --max-time 10 -o "$OUT/version.json" -w '%{http_code}\n' "$BASE/version" > "$OUT/version.code" 2> /dev/null || true
-            check "backend: GET /version returns 200" version_ok
-            echo "version answer: $(head -c 300 "$OUT/version.json")" | tee -a "$OUT/verify.txt"
-            if [ -n "$EXPECTED_SHA" ]; then
-              check "release: /version reports the expected commit" grep -q "$EXPECTED_SHA" "$OUT/version.json"
-            fi
+            check "security: GET /version is NOT exposed on the public origin (404; it stays internal)" version_hidden
             curl -sS --max-time 10 -o "$OUT/products.json" -w '%{http_code}\n' "$BASE/api/products" > "$OUT/products.code" 2> /dev/null || true
             check "database: GET /api/products returns 200 and a non-empty catalogue (backend -> PostgreSQL)" catalogue_ok
             echo "products answer (first 200 bytes): $(head -c 200 "$OUT/products.json")" | tee -a "$OUT/verify.txt"
@@ -160,10 +151,9 @@ jobs:
           else
             mkdir -p "$OUT/traffic"
             rc=0
-            bash deploy/scripts/request-loop.sh --url "${BASE}/health" --version-url "${BASE}/version" --seconds "$SECONDS_TO_RUN" --interval "$INTERVAL" --max-time 5 \
+            bash deploy/scripts/request-loop.sh --url "${BASE}/health" --seconds "$SECONDS_TO_RUN" --interval "$INTERVAL" --max-time 5 \
               --log "$OUT/traffic/request-loop.log" --json "$OUT/traffic/summary.json" || rc=$?
             echo "request-loop exit code: $rc"
-            echo "--- version changes seen during the run:"; cat "$OUT/traffic/request-loop.log.versions" 2> /dev/null || true
             exit "$rc"
           fi
       - name: Upload the evidence
