@@ -263,6 +263,33 @@ check("each key is bound to one environment: the setup script writes a forced co
       'command=\\"$SBIN/$ENTRY $env\\"' in setup and 'die "this key may only act on $KEY_ENV"' in entry)
 check("the entry point can start only the two wrappers", "shopnest-deploy | shopnest-rollback" in entry and 'exec sudo -n "$SBIN/${WORDS[0]}"' in entry)
 
+print("== ssh-preflight.yml: a diagnostic that deploys nothing")
+pf_text, pf = load("ssh-preflight.yml")
+pf_code = uncommented(pf_text)
+pf_on = pf.get("on", pf.get(True)) or {}
+pf_job = pf["jobs"]["preflight"]
+pf_steps = pf_job["steps"]
+pf_runs = [s.get("run", "") for s in pf_steps]
+check("ssh-preflight.yml: manual start only", list(pf_on) == ["workflow_dispatch"], str(list(pf_on)))
+check("ssh-preflight.yml: no default token permissions, id-token only on the one job", pf.get("permissions") == {} and (pf_job.get("permissions") or {}).get("id-token") == "write" and list(pf["jobs"]) == ["preflight"])
+check("ssh-preflight.yml: runs from main only", "github.ref == 'refs/heads/main'" in str(pf_job.get("if", "")))
+check("ssh-preflight.yml: bound to the chosen Environment (production is held for its reviewer)", str(pf_job.get("environment")) == "${{ inputs.environment }}")
+check("ssh-preflight.yml: the SSH client runs with --preflight-only and without --seed, so nothing can be deployed",
+      sum("ssh-deploy.sh" in r for r in pf_runs) == 1 and all("--preflight-only" in r for r in pf_runs if "ssh-deploy.sh" in r) and "--seed" not in pf_code and "ssh-deploy.sh rollback" not in pf_code)
+check("ssh-preflight.yml: the only secret is DEPLOY_SSH_KEY", sorted(set(re.findall(r"secrets\.(\w+)", pf_code))) == ["DEPLOY_SSH_KEY"])
+pf_plugin = [i for i, s in enumerate(pf_steps) if "install-ssm-plugin.sh" in s.get("run", "")]
+pf_creds = [i for i, s in enumerate(pf_steps) if "configure-aws-credentials" in str(s.get("uses", ""))]
+pf_deploy = [i for i, s in enumerate(pf_steps) if "ssh-deploy.sh" in s.get("run", "")]
+check("ssh-preflight.yml: the pinned plugin is installed BEFORE the AWS credentials, then the pre-flight",
+      len(pf_plugin) == 1 and len(pf_creds) == 1 and len(pf_deploy) == 1 and pf_plugin[0] < pf_creds[0] < pf_deploy[0])
+check("ssh-preflight.yml: the AWS account id is masked", (pf_steps[pf_creds[0]].get("with") or {}).get("mask-aws-account-id") is True if pf_creds else False)
+check("ssh-preflight.yml: every action is pinned to a full commit SHA", all(re.match(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$", u) for u in re.findall(r"^\s*-?\s*uses:\s*(\S+)", pf_code, re.M)))
+check("ssh-preflight.yml: no expression is expanded inside a script and no shell tracing", not any("${{" in r for r in pf_runs) and not any(re.search(r"set\s+-[a-z]*x", r) for r in pf_runs))
+check("ssh-preflight.yml: a final always() step kills any tunnel that is left", any("AWS-StartPortForwardingSession" in s.get("run", "") and "always()" in str(s.get("if", "")) for s in pf_steps))
+check("ssh-preflight.yml: uses the same lab concurrency group, so it never overlaps a deploy", (pf_job.get("concurrency") or {}).get("group") == "deploy-lab")
+check("ssh-preflight.yml: the deliberate failure replaces the host key with a throwaway one, never weakens checking", "wrong-host-key" in pf_code and "StrictHostKeyChecking=no" not in pf_code and "ssh-keygen -q -t ed25519" in pf_code)
+check("ssh-deploy.sh has the --preflight-only mode and sends nothing after the pre-flight in it", "--preflight-only) PREFLIGHT_ONLY=1" in ssh_code and ssh_code.index('if [ "$PREFLIGHT_ONLY" = 1 ]') < ssh_code.index('emit "ssh-deploy: running: ${REMOTE}"'))
+
 print()
 print(f"workflow checks: {passes} passed, {len(failures)} failed")
 sys.exit(1 if failures else 0)

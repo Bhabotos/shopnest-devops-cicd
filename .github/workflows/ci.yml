@@ -297,6 +297,8 @@ jobs:
         run: bash deploy/tests/ci-helpers.test.sh
       - name: Host wrappers, SSH entry point and host setup (offline tests of validation, the sudoers rule and key binding; no root, no network)
         run: bash deploy/tests/host-wrapper.test.sh
+      - name: Request-loop evidence tool counts failures, timeouts and latency correctly (offline; throwaway loopback server)
+        run: bash deploy/tests/request-loop.test.sh
       - name: SSH deploy through the SSM tunnel and the pinned plugin installer (offline; fake aws, ssh and curl)
         # Proves strict host key checking against the pinned key, the pre-flight, the exit codes, and that the tunnel, the SSM session and
         # the key are cleaned up on every path. It does not prove AWS, sshd or the instance: that needs the first real run.
