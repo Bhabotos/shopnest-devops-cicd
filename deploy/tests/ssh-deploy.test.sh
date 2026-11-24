@@ -40,6 +40,7 @@ case "$2" in
   start-session)
     echo "$*" >> "$FAKE_DIR/aws.calls"
     if [ "${FAKE_TUNNEL:-up}" = dies ]; then echo "An error occurred (TargetNotConnected) when calling the StartSession operation"; exit 254; fi
+    if [ "${FAKE_TUNNEL:-up}" = denied ]; then echo "An error occurred (AccessDeniedException) when calling the StartSession operation: User: arn:aws:sts::123456789012:assumed-role/example-role/GitHubActions is not authorized to perform: ssm:StartSession on resource: arn:aws:ec2:ap-south-1:123456789012:instance/i-0123456789abcdef0"; exit 254; fi
     echo "Starting session with SessionId: test-user-0abc123"
     echo "Port 2222 opened for sessionId test-user-0abc123."
     echo "Waiting for connections..."
@@ -207,6 +208,12 @@ after_cleanup "refused pre-flight"; key_deleted "refused pre-flight"
 
 echo "== a dead tunnel and a bad key"
 check "the tunnel cannot be opened (exit 4)" "$(run dead FAKE_TUNNEL=dies -- "${deploy_args[@]}")" 4
+check "an AccessDenied from AWS fails closed (exit 4)" "$(run denied FAKE_TUNNEL=denied -- "${deploy_args[@]}")" 4
+has "the AWS error text is still shown" "$T/denied.out" "AccessDeniedException"
+lacks "the account id is redacted from the printed error" "$T/denied.out" "123456789012"
+lacks "the instance id is redacted from the printed error" "$T/denied.out" "i-0123456789abcdef0"
+has "redaction leaves a marker for the account" "$T/denied.out" "<account>"
+has "redaction leaves a marker for the instance" "$T/denied.out" "<instance>"
 has "the tunnel's own error is shown" "$T/dead.out" "TargetNotConnected"
 [ ! -f "$FAKE/ssh.args" ] && ok "ssh is never run without a tunnel" || bad "ssh ran without a tunnel"
 check "a key that is not a private key (exit 4)" "$(run badkey DEPLOY_SSH_KEY='not a key at all' -- "${deploy_args[@]}")" 4

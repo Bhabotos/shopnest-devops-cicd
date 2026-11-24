@@ -86,6 +86,10 @@ TUNNEL_PID=""
 SESSION_ID=""
 
 emit() { printf '%s\n' "$*" | tee -a "$SESSION_LOG"; }
+# AWS error text names the account and the instance (for example in an AccessDenied ARN). They are identifiers, not credentials, but they
+# do not belong in a public job log or its artifact: a 12-digit number standing alone and an instance id are replaced. (Only the error text
+# of the tunnel and of the pre-flight goes through this; the host's own deploy output is kept as it is, because the success check reads it.)
+redact() { sed -E 's/(^|[^0-9A-Za-z])[0-9]{12}([^0-9A-Za-z]|$)/\1<account>\2/g; s/(^|[^0-9A-Za-z-])i-[0-9a-f]{8,17}([^0-9A-Za-z]|$)/\1<instance>\2/g'; }
 
 # Runs on EVERY exit path (success, failure, a bad key, SIGINT/SIGTERM): end the SSM session, stop the tunnel, delete the key.
 cleanup() {
@@ -148,7 +152,7 @@ up=0
 for _ in $(seq 1 45); do
   if ! kill -0 "$TUNNEL_PID" 2> /dev/null; then
     emit "ssh-deploy: ERROR: the tunnel process ended before it was ready:"
-    sed 's/^/  tunnel: /' "$TUNNEL_LOG" | tee -a "$SESSION_LOG"
+    sed 's/^/  tunnel: /' "$TUNNEL_LOG" | redact | tee -a "$SESSION_LOG"
     exit 4
   fi
   if grep -q 'Waiting for connections' "$TUNNEL_LOG" 2> /dev/null; then up=1; break; fi
@@ -158,7 +162,7 @@ SESSION_ID="$(sed -n 's/^Starting session with SessionId: *//p' "$TUNNEL_LOG" | 
 [[ $SESSION_ID =~ ^[A-Za-z0-9_.@:-]+$ ]] || SESSION_ID=""
 if [ "$up" != 1 ]; then
   emit "ssh-deploy: ERROR: the tunnel was not ready after 90 seconds:"
-  sed 's/^/  tunnel: /' "$TUNNEL_LOG" | tee -a "$SESSION_LOG"
+  sed 's/^/  tunnel: /' "$TUNNEL_LOG" | redact | tee -a "$SESSION_LOG"
   exit 4
 fi
 emit "ssh-deploy: tunnel is up"
@@ -184,7 +188,7 @@ for attempt in 1 2 3; do
 done
 if [ "$check_ok" != 1 ]; then
   emit "ssh-deploy: ERROR: the pre-flight check failed (ssh exit ${rc}); nothing was started on the host:"
-  { cat "$TMP/ssh.err"; [ -z "$answer" ] || printf '%s\n' "$answer"; } | sed 's/^/  host: /' | tee -a "$SESSION_LOG"
+  { cat "$TMP/ssh.err"; [ -z "$answer" ] || printf '%s\n' "$answer"; } | sed 's/^/  host: /' | redact | tee -a "$SESSION_LOG"
   exit 4
 fi
 emit "ssh-deploy: pre-flight ok (tunnel, key, pinned host key and request accepted)"
