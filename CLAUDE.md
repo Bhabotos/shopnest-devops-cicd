@@ -10,7 +10,7 @@ Automated CI/CD for ShopNest's three-tier app using GitHub Actions.
 - Data: PostgreSQL (Docker, internal network only)
 - Infra: AWS in ap-south-1, provisioned with Terraform (our choice, not mandated): VPC, ALB, a private EC2 instance, private RDS PostgreSQL, ECR and an S3 artifact bucket. Written, never applied.
 - Deploy: GitHub OIDC -> CodeBuild (migrations) -> Systems Manager (deploy and rollback documents), with Docker Compose, Nginx reverse proxy, blue-green, health checks and automatic rollback. No SSH is used. Never run on AWS.
-- The assignment says deployment is "over SSH"; the SSM design is pending instructor confirmation (do not assume it is acceptable).
+- The assignment says deployment is "over SSH"; the instructor has approved AWS Systems Manager (SSM) instead of SSH (stated by the owner on 2026-11-23; no written confirmation is stored in this repository). Approval of the method is NOT AWS access: IAM permissions and budget are separate and not granted (the `devops` profile reads EC2 only; budget not approved), and nothing is deployed.
 - Runtime matrix: backend and frontend Node.js 22 and 24; local development on Node.js 24 (never 18 or 20)
 
 ## Hard rules (never violate)

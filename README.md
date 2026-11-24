@@ -55,7 +55,7 @@ The difference is the last step: Delivery keeps a human approval before producti
 Planned design (not yet running): a merge to `main` runs CI; after CI passes, the release is deployed automatically to **staging**, and **production
 requires a manual reviewer approval** (a GitHub Environment protection rule). This is Continuous Delivery for production, chosen because ShopNest has just had a
 bad release: an automated safety net (tests, health checks, rollback) is valuable, but a person should still own the moment production changes.
-Staging is continuously deployed. **Production deployment and its approval gate are not implemented**: the CD workflow deploys staging only and says so in its run summary.
+Staging is continuously deployed. **Production deployment is not implemented**: the CD workflow deploys staging only. Its last job, `production-approval`, is an approval gate bound to the `production` Environment that deploys nothing, and it has never run. The Environment's manual approval was demonstrated with the separate `approval-demo` workflow (run [45128964969](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45128964969)), which also deploys nothing.
 
 ## Technology stack
 
@@ -211,7 +211,7 @@ flowchart TB
       direction TB
       s1[push image to ECR, read digest] --> s2[CodeBuild migrator<br/>a failure stops here] --> s3[upload bundle to S3] --> s4[Systems Manager deploy]
     end
-    staging --> note[production: notice only, not deployed]
+    staging --> note[production-approval: gate on the production Environment<br/>deploys nothing, never run]
   end
   manual([workflow_dispatch]) --> rb
   subgraph rb [rollback.yml - never run]
@@ -219,6 +219,7 @@ flowchart TB
   end
   tf[terraform-ci.yml<br/>fmt, init, validate, IAM rules, gitleaks]
   demo[pipeline-demo.yml<br/>Part H demonstration]
+  approvaldemo[approval-demo.yml<br/>manual production approval demonstration, deploys nothing]
 ```
 
 | Workflow | Trigger | State |
@@ -236,7 +237,7 @@ Backend (Node 24), Backend Docker image (each bound to the GitHub Actions app); 
 Conversation resolution is intentionally disabled (accepted configuration for a single-maintainer assignment project).
 **Project convention:** pull requests are merged with a normal merge commit. Squash and rebase merging remain **enabled** in GitHub, so this is a working convention, not an enforced restriction.
 A failing required check was demonstrated on [PR #28](https://github.com/Bhabotos/shopnest-devops-cicd/pull/28): a deliberate failing test made both Backend checks fail and the Docker-image check skip, and GitHub reported the merge as blocked
-(observed through the GitHub API). **There is no screenshot of the blocked merge**, because the checks are green now. PR #28 is an intentionally open failure demonstration and **must not be merged**.
+(observed through the GitHub API). **There is no screenshot of a live blocked-merge banner** (the checks are green now and it cannot be recreated). The historical failure is shown by two later captures: the [PR #28 Commits tab](docs/screenshots/part-b/pr28-commits.png) (commit `a3282f4` with a red mark, `5472d40` with a green one) and the [failed-checks view](docs/screenshots/part-b/pr28-blocked-check.png) (3 successful, 2 failing, 1 skipped: Backend Node 22 and 24 failing, Backend Docker image skipped, matching commit `a3282f4`). PR #28 is an intentionally open failure demonstration and **must not be merged**.
 
 All workflows declare explicit `permissions:` and every `uses:` reference is pinned to a commit SHA; a static check enforces this for the deployment workflows.
 
@@ -292,9 +293,9 @@ Approximate cost estimates are in section 12 of the Terraform README (an estimat
   Exit codes 0, 1 and 3 come back unchanged; code 4 means the result could not be confirmed. The sequence, with a diagram, is in [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md#5-deployment-sequence).
 - **Never run against AWS.** The behaviour is covered by offline tests with fakes (see [Testing](#testing-and-validation)), not by any real run.
 - **Production is not deployed** by this workflow (no production infrastructure exists). Its last job, `production-approval`, is only a gate bound to the `production` Environment (it deploys nothing); the Environment and its required reviewer are **not yet configured**, so the approval is not verified.
-- **Unresolved:** how staging gets a demo catalogue (the seed policy refuses staging and the instance cannot seed), the instructor's answer on Systems Manager instead of SSH, and the live-URL rule. See the
+- **Unresolved:** how staging gets a demo catalogue (the seed policy refuses staging and the instance cannot seed), and the live-URL rule (Systems Manager instead of SSH is approved by the instructor). See the
   [unresolved decisions](docs/AWS_STAGING_INTEGRATION.md#14-unresolved-decisions).
-- **Instructor confirmation pending:** the assignment says deployment is "over SSH"; the design uses Systems Manager instead. This is waiting for the instructor's answer. Until then it is not assumed to be acceptable.
+- **Instructor approval (Systems Manager instead of SSH):** the assignment says deployment is "over SSH"; the design uses Systems Manager instead, which the instructor has approved (stated by the owner on 2026-11-23; no written confirmation is stored in this repository). This approves the method only: AWS IAM permissions, infrastructure access and budget are separate and are NOT available or approved, and nothing is deployed.
 
 ## Zero-downtime strategy and trade-offs
 
@@ -370,12 +371,12 @@ Status words: **Done** = real evidence exists; **Partial** = built, with the gap
 | A. CI/CD concepts | 5 | Written in this README; awaiting the owner's review | [Part A](#part-a-cicd-concepts-for-shopnest-management) |
 | B. CI pipeline | 15 | Partial: CI passes on GitHub; a failing required check blocking a merge is demonstrated by the deliberate failing test on PR #28 (the failed and recovered runs are in `docs/screenshots/part-h/`; the blocked-merge view itself was not captured); the owner's own tests are pending | [workflows](#github-actions-workflows) |
 | C. Workflow architecture | 10 | Partial: CI, matrix, parallel jobs, artifact done; the rewritten CD never run; screenshots partial (the CI job graph appears in the Part H screenshots; no CD run exists to show) | [workflows](#github-actions-workflows) |
-| D. Secrets and configuration | 10 | Partial: no secrets in the repo; OIDC, Secrets Manager and the operator role are written as code, not applied. GitHub Environments `staging` and `production` are configured (main-only; `production` requires reviewer `Bhabotos`; 0 variables, 0 secrets). **Manual approval demonstrated with a separate demonstration workflow only:** `approval-demo` run [45128964969](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45128964969) (commit `3738e0bb22f4e67164abecec11d0f7a58779216b`, `main`) paused at "Waiting for review", was approved by `Bhabotos`, and finished `success`. It deploys nothing and touches no AWS; the `production-approval` job in `cd.yml` has never run, and no real secret usage or production deployment exists. Screenshots in the repository: [waiting for review](docs/screenshots/part-d/waiting%20.png) and [approved, success](docs/screenshots/part-d/Human%20Approval.png) (neither shows the run ID in a URL; the run page title `approval-demo #1`, commit `3738e0b`, the approval by `Bhabotos` and the success status are visible, and the run ID is confirmed by the GitHub API record). Missing: a screenshot of the Environment settings page | [secrets](#secrets-and-variables) |
+| D. Secrets and configuration | 10 | Partial: no secrets in the repo; OIDC, Secrets Manager and the operator role are written as code, not applied. GitHub Environments `staging` and `production` are configured (main-only; `production` requires reviewer `Bhabotos`; 0 variables, 0 secrets). **Manual approval demonstrated with a separate demonstration workflow only:** `approval-demo` run [45128964969](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45128964969) (commit `3738e0bb22f4e67164abecec11d0f7a58779216b`, `main`) paused at "Waiting for review", was approved by `Bhabotos`, and finished `success`. It deploys nothing and touches no AWS; the `production-approval` job in `cd.yml` has never run, and no real secret usage or production deployment exists. Screenshots in the repository: [waiting for review](docs/screenshots/part-d/waiting%20.png) and [approved, success](docs/screenshots/part-d/Human%20Approval.png) (neither shows the run ID in a URL; the run page title `approval-demo #1`, commit `3738e0b`, the approval by `Bhabotos` and the success status are visible, and the run ID is confirmed by the GitHub API record). Environment settings for `production`: [top](docs/screenshots/part-d/environment-settings.png) and [bottom](docs/screenshots/part-d/environment-settings-bottom.png) show required reviewer `Bhabotos`, self-review off, administrator bypass off, deployment branch `main` only, and no environment secrets or variables | [secrets](#secrets-and-variables) |
 | E. Deployment to EC2 | 15 | Pending: Terraform and the deployment code are written, nothing is deployed | [Terraform](#terraform-infrastructure) |
 | F. Zero downtime | 15 | Partial: local evidence only; the AWS path is not exercised | [strategy](#zero-downtime-strategy-and-trade-offs) |
 | G. Monitoring and rollback | 15 | Partial: local and offline evidence only; the rewritten rollback workflow never run | [rollback](#rollback-strategy) |
 | H. Debugging and Copilot | 10 | Partial: three deliberate failures (YAML syntax error, deployment health check, failing test), each with a failed and a recovery run, root cause and fix reference, written up in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md); Copilot's generation of `pipeline-demo.yml` is documented in [`docs/copilot/`](docs/copilot/). **Not available:** the Copilot troubleshooting prompts and responses (see [Evidence](#evidence-and-workflow-links)); failure 2 has no fix commit (its recovery was a corrected workflow input). **Screenshots:** 13 are in [`docs/screenshots/part-h/`](docs/screenshots/part-h/) and mapped to the runs in the evidence document (some are partial). **Missing:** the expanded health-check step for failure 2 and a screenshot of the blocked merge for failure 3 | [evidence](#evidence-and-workflow-links), [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md) |
-| I. Documentation | 5 | Partial: this README and the AWS integration document; the Part H screenshots are added (some are partial); a clean-clone dry run was completed locally on 2026-11-23 for commit `053648a` (frontend 39 passed; backend 160 passed, 11 PostgreSQL integration tests skipped because `TEST_DATABASE_URL` was unset; workflow checks 77 passed; Terraform IAM checks 97 passed) and an all-history gitleaks 8.30.1 scan found no leaks: [`docs/evidence/clean-clone-2026-11-23/`](docs/evidence/clean-clone-2026-11-23/). That test did not include `approval-demo.yml`, did not run on AWS or in GitHub Actions, and did not run the integration tests; the 2 Part D screenshots are in `docs/screenshots/part-d/`; no CI-matrix, CD or live-application screenshots exist; the live URL is pending | this file, [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md) |
+| I. Documentation | 5 | Partial: this README and the AWS integration document; the Part H screenshots are added (some are partial); a clean-clone dry run was completed locally on 2026-11-23 for commit `053648a` (frontend 39 passed; backend 160 passed, 11 PostgreSQL integration tests skipped because `TEST_DATABASE_URL` was unset; workflow checks 77 passed; Terraform IAM checks 97 passed) and an all-history gitleaks 8.30.1 scan found no leaks: [`docs/evidence/clean-clone-2026-11-23/`](docs/evidence/clean-clone-2026-11-23/). That test did not include `approval-demo.yml`, did not run on AWS or in GitHub Actions, and did not run the integration tests; the Part D screenshots are in `docs/screenshots/part-d/`; CI run #96 on `main` ([job graph and matrix](docs/screenshots/part-b/ci-success-matrix.png), [artifacts `frontend-dist-node22` and `frontend-dist-node24`](docs/screenshots/part-b/ci-success-matrix-artifacts.png)) is captured; no CD or live-application screenshots exist; the live URL is pending | this file, [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md) |
 
 ## Evidence and workflow links
 
@@ -404,13 +405,12 @@ and commit links) is in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_
 - **Not available:** the Copilot troubleshooting prompts and responses. The owner states that GitHub Copilot was used for troubleshooting but could not recall which failure it covered, and no conversation exists in the repository or
   in its GitHub records, so none is claimed and none is reconstructed. The owner's own troubleshooting steps for failure 2 are not recalled, and failure 2 has no fix commit. The records in [`docs/copilot/`](docs/copilot/) cover how
   `pipeline-demo.yml` was *generated* with Copilot; they are the owner's records and are labelled there as not independently verified.
-- **Still missing:** the expanded *Check health endpoint* step for failure 2, a screenshot of the blocked merge on PR #28 (it cannot be reproduced now), the lower half of the branch protection page (required check names, up to date,
-  administrator enforcement, force pushes), and the Actions list filtered to failed runs.
+- **Still missing:** the lower half of the branch protection page (required check names, up to date, administrator enforcement, force pushes) and the Actions list filtered to failed runs. A live blocked-merge banner for PR #28 cannot be reproduced now (see the historical captures cited under Part B).
 
 **Part H screenshots** (folder: [`docs/screenshots/part-h/`](docs/screenshots/part-h/); the evidence level of each, and the run it belongs to, is in the
 [screenshot evidence map](docs/failures/PART_H_FAILURES.md#screenshot-evidence-map)):
 - **Failure 1:** [failed run with GitHub's annotation](docs/screenshots/part-h/YAML%20Syntax%20Failure.png), [recovered run](docs/screenshots/part-h/Sucessfully%20recovery.png).
-- **Failure 2:** [failed run](docs/screenshots/part-h/Health%20Check%20failure.png) (**partial**: the failing step is not expanded), [recovered run](docs/screenshots/part-h/Health%20Check%20Recovery.png).
+- **Failure 2:** [failed run](docs/screenshots/part-h/Health%20Check%20failure.png) (run #4; the [expanded `Check health endpoint` step](docs/screenshots/part-h/health-check-failure-expanded.png) shows "Health check request failed." and exit code 1), [recovered run](docs/screenshots/part-h/Health%20Check%20Recovery.png).
 - **Failure 3:** [failed CI run](docs/screenshots/part-h/Failed%20backend%20test.png), [Test log](docs/screenshots/part-h/Backend%20Failed%20run.png), [fix commit](docs/screenshots/part-h/Fix%20commit.png),
   [recovered CI run](docs/screenshots/part-h/recovery%20plan.png), [PR #28 open and marked DO NOT MERGE](docs/screenshots/part-h/PR28%20open%20test.png).
 - **Settings and overview (all partial):** [branch protection](docs/screenshots/part-h/Branch%20Protection.png), [protection rules list](docs/screenshots/part-h/CI%20Configure.png),

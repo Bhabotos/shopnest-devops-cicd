@@ -197,7 +197,7 @@ After the fix commit, all required checks passed and the state became **CLEAN**.
 
 Screenshots: the failing checks are in `Failed backend test.png` and `Backend Failed run.png`. The branch protection screenshots are **partial**: `Branch Protection.png` shows that "Require a pull request before merging" and
 "Require status checks to pass before merging" are enabled for `main`, but not the names of the required checks, "Require branches to be up to date", administrator enforcement or the force-push setting, which rest on the
-read-back document above. There is **no screenshot of the blocked merge**.
+read-back document above. There is **no screenshot of a live blocked-merge banner**; the historical failure is shown by `docs/screenshots/part-b/pr28-commits.png` and `docs/screenshots/part-b/pr28-blocked-check.png` (added 2026-11-23).
 
 ---
 
@@ -237,8 +237,7 @@ is spelled as supplied). **No screenshot displays a run ID or URL.** Each is tie
 | 12 | [`Github actions.png`](../screenshots/part-h/Github%20actions.png) | all | Actions list | 108 runs; recent CI success on `main` (`011752c`) and CD runs; workflows listed. **No failed run is visible in this view** | **Partial** |
 | 13 | [`Readme.png`](../screenshots/part-h/Readme.png) | I | README on `main` | The top of the README with its "Honest status" banner and contents. The Part H section is not in view | **Partial** |
 
-**Still missing:** the expanded *Check health endpoint* step of run 44884809417 (failure 2); a screenshot of the blocked merge on PR #28 (it can no longer be reproduced as it was; PR #28's Commits tab, showing a red mark on `a3282f4` and a
-green one on `5472d40`, would show the failed and recovered states); the lower half of the branch protection page (required check names, up to date, administrator enforcement, force pushes); and the Actions list filtered to failed runs.
+**Added 2026-11-23 (owner's captures):** `../screenshots/part-h/health-check-failure-expanded.png` (failure 2, run #4, the *Check health endpoint* step expanded), `../screenshots/part-b/pr28-commits.png` and `../screenshots/part-b/pr28-blocked-check.png` (failure 3, historical). **Still missing:** a live blocked-merge banner for PR #28 (cannot be reproduced now); the lower half of the branch protection page (required check names, up to date, administrator enforcement, force pushes); and the Actions list filtered to failed runs.
 
 ---
 
