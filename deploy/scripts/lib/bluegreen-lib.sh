@@ -344,10 +344,17 @@ bg_nginx_get() { bg_compose exec -T nginx wget -q -O - "http://127.0.0.1:8081$1"
 # discards the caller's environment, so it cannot be set there.
 BG_FAULT_SHA=""
 bg_fault_arm() { # <sha> <note> <previous colour>
-  local f="$BG_ENV_DIR/fault.env" owner="${BG_FAULT_OWNER_UID:-0}" mode
+  local f="$BG_ENV_DIR/fault.env" owner="${BG_FAULT_OWNER_UID:-0}" mode near
   BG_FAULT_SHA=""
   [ "$BG_ENV" = staging ] && [ "$BG_DB_MODE" = lab ] || return 0
-  { [ -e "$f" ] || [ -L "$f" ]; } || return 0
+  if ! { [ -e "$f" ] || [ -L "$f" ]; }; then
+    # A silent "nothing armed" cannot be told apart from a hook that did not run (found on the first real attempt). Staging deploys therefore
+    # say what they looked for, and list the names, owners and modes (never the content) of anything under the base directory called *fault*,
+    # which shows a file created in the wrong place or under the wrong name. Production never reaches this code.
+    near="$(find "$BG_BASE_DIR" -maxdepth 3 -iname '*fault*' -printf '%u:%g %m %p\n' 2> /dev/null | head -n 5 | tr '\n' ';')"
+    bg_log "fault injection: no fault file at $f, not armed${near:+; found instead (NOT used): $near}"
+    return 0
+  fi
   if [ "$2" != deploy ]; then bg_log "fault file present, but this is a $2 and not a deploy: left untouched, not armed"; return 0; fi
   if [ -z "$3" ]; then bg_log "fault file present, but there is no previous release to fall back to: left untouched, not armed"; return 0; fi
   if [ -L "$f" ] || [ ! -f "$f" ]; then bg_log "fault file ignored: it is not a plain file"; return 0; fi

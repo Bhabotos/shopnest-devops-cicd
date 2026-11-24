@@ -283,6 +283,20 @@ if [ "$MODE_OK" = 1 ]; then
 else
   echo "SKIP  group-writable and symlink fault files (this filesystem cannot represent them; CI on Linux checks them)"
 fi
+# The staging deploy says what it looked for when nothing is armed, and shows a misplaced file by name (never its content).
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+mkdir -p "$SHOPNEST_HOME/staging"; printf '%s\n' "$FAULT_LINE" > "$SHOPNEST_HOME/staging/fault.env.txt"
+deploy "$CO_B" staging "$B"; check "a misnamed fault file does not arm anything: the deploy succeeds" $? 0
+contains "the log says nothing was armed and where it looked" "$W/out" "fault injection: no fault file at $SHOPNEST_HOME/staging/fault.env, not armed"
+contains "the log names the misplaced file" "$W/out" "found instead (NOT used):.*fault.env.txt"
+absent "the log never prints the content of a fault file" "$W/out" "post-switch-unhealthy"
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+deploy "$CO_A" production "$A"; check "a production deploy succeeds" $? 0
+absent "production never looks for, nor mentions, a fault file" "$W/out" "fault injection"
 unset BG_FAULT_OWNER_UID
 
 echo

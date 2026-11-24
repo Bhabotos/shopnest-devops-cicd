@@ -82,6 +82,7 @@ A manual workflow: choose `staging` or `production` and a full commit SHA that w
 ' | sudo tee /opt/shopnest/staging/fault.env > /dev/null
    sudo chown root:root /opt/shopnest/staging/fault.env && sudo chmod 600 /opt/shopnest/staging/fault.env
    ```
+   Check what you created before deploying: `sudo stat -c '%U:%G %a %n' /opt/shopnest/staging/fault.env` must print `root:root 600 /opt/shopnest/staging/fault.env`. Every staging deploy also logs a line saying whether it found a fault file at that path (and lists any file named `*fault*` under `/opt/shopnest` by name, owner and mode only), so a file in the wrong place is visible in the deploy log.
 2. **Trigger a staging deploy** (merge any small pull request to `main`, or re-run the latest successful CI run on `main`). The deploy starts the new colour, validates it, switches traffic, and then the fault consumes itself: the file is deleted, the new release's post-switch verification is reported as failed, and the real automatic rollback returns traffic to the previous release and verifies it. The workflow job ends with exit 1 ("the deploy failed; the previous release is still serving"), and the production job never runs (`needs: deploy-staging`).
 3. **Evidence**: the failed CD run, its `deploy-log-staging-...` artifact (it contains `FAULT INJECTION (staging test): armed for release ...`, `post-switch verification FAILED`, `previous release ... is live again (automatic rollback complete)`), and a `staging-verify` run showing staging healthy on the previous release.
 
