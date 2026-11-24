@@ -10,9 +10,10 @@
 #   $FAKE/pull_fail             `docker pull` fails (the image is not in the registry any more)
 #   $FAKE/pull_wrong_revision   the pulled image carries a different revision label than the release SHA
 #   $FAKE/frontend_empty        the frontend image holds no index.html (lab mode)
+# `compose pause <service>` freezes a running service: exec into it fails and nginx gets no answer from it, until it is recreated or removed.
 set -u
 : "${FAKE:?FAKE must point at the fake engine state directory}"
-mkdir -p "$FAKE/running" "$FAKE/images"
+mkdir -p "$FAKE/running" "$FAKE/images" "$FAKE/paused"
 log() { echo "$*" >> "$FAKE/calls.log"; }
 
 # Record which colour and release nginx would serve, as of its current active.conf.
@@ -88,8 +89,17 @@ case "$sub" in
           tag="$(tag_of "$svc")"
           log "up $svc $tag"
           if [ -f "$FAKE/start_fail/$tag" ]; then exit 1; fi
-          echo "$tag" > "$FAKE/running/$svc" ;;
+          echo "$tag" > "$FAKE/running/$svc"
+          rm -f "$FAKE/paused/$svc" ;;   # a (re)created container is not paused
       esac
+    done
+    exit 0 ;;
+  pause)
+    for svc in "$@"; do
+      case "$svc" in -*) continue ;; esac
+      [ -f "$FAKE/running/$svc" ] || exit 1
+      touch "$FAKE/paused/$svc"
+      log "pause $svc"
     done
     exit 0 ;;
   ps)
@@ -98,7 +108,7 @@ case "$sub" in
   stop | rm)
     for svc in "$@"; do
       case "$svc" in -*) continue ;; esac
-      rm -f "$FAKE/running/$svc"
+      rm -f "$FAKE/running/$svc" "$FAKE/paused/$svc"
       log "$sub $svc"
     done
     exit 0 ;;
@@ -116,6 +126,7 @@ case "$sub" in
       db) [ -f "$FAKE/running/db" ]; exit $? ;;
       backend-blue | backend-green)
         [ -f "$FAKE/running/$svc" ] || exit 1
+        [ -f "$FAKE/paused/$svc" ] && exit 1   # like Docker: "container is paused, unpause the container before exec"
         tag="$(cat "$FAKE/running/$svc")"
         js="$*"
         case "$js" in
@@ -133,6 +144,7 @@ case "$sub" in
             [ -f "$FAKE/served" ] || exit 1
             read -r colour served_sha < "$FAKE/served"
             [ -f "$FAKE/running/backend-$colour" ] || exit 1
+            [ -f "$FAKE/paused/backend-$colour" ] && exit 1   # nginx cannot get an answer from a frozen backend
             tag="$(cat "$FAKE/running/backend-$colour")"
             [ -f "$FAKE/bad_health/$tag" ] && exit 1
             [ -f "$FAKE/postswitch_bad/$served_sha" ] && exit 1

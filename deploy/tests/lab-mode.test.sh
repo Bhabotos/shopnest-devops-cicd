@@ -299,6 +299,81 @@ deploy "$CO_A" production "$A"; check "a production deploy succeeds" $? 0
 absent "production never looks for, nor mentions, a fault file" "$W/out" "fault injection"
 unset BG_FAULT_OWNER_UID
 
+echo "== 9. staging-only, one-shot REAL fault: the new colour is frozen, its health checks genuinely fail, traffic never moves"
+THIS_UID="$(id -u)"
+export BG_FAULT_OWNER_UID="$THIS_UID"
+REAL_LINE='FAULT=backend-unhealthy-pre-switch'
+paused_calls() { grep -c "^pause " "$FAKE/calls.log" 2> /dev/null || true; }
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+arm staging "$REAL_LINE"
+deploy "$CO_B" staging "$B"; check "a frozen new colour fails its readiness check: the deploy exits 1 (never 3)" $? 1
+check "the fault file is consumed and removed" "$(has_fault staging)" no
+contains "the log says the fault was armed and the colour frozen" "$W/out" "armed for release $B.*backend-green is now FROZEN (docker pause)"
+contains "the log says validation failed and traffic did not move" "$W/out" "validation FAILED for backend-green; traffic was NOT moved"
+contains "the log says the failure was caused by the fault file" "$W/out" "this failure was CAUSED by the staging fault file"
+absent "no post-switch step ran (the switch never happened)" "$W/out" "switching traffic"
+check "traffic is still on A, the previous release" "$(served)" "blue $A"
+check "A is still the active colour" "$(state staging active)" blue
+check "only the idle colour was frozen: exactly one pause call, for backend-green" "$(grep '^pause ' "$FAKE/calls.log" | tr '\n' ' ')" "pause backend-green "
+check "the previous release's colour was never frozen" "$(grep -c '^pause backend-blue' "$FAKE/calls.log" || true)" 0
+check "the failed colour was removed afterwards" "$([ -f "$FAKE/running/backend-green" ] && echo running || echo gone)" gone
+check "B was never recorded as deployed" "$(grep -c " $B deployed " "$SHOPNEST_HOME/staging/state/history.log")" 0
+check "the history records the rejection" "$(grep -c " staging $B failed pre-switch validation failed; live release unchanged" "$SHOPNEST_HOME/staging/state/history.log")" 1
+check "last good is still A" "$(state staging last_good)" "$A"
+deploy "$CO_B" staging "$B"; check "the fault is one-shot: the next deploy of B succeeds" $? 0
+check "B is live on green" "$(served)" "green $B"
+check "no further colour was frozen" "$(paused_calls)" 1
+
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" production "$A"
+arm production "$REAL_LINE"
+deploy "$CO_B" production "$B"; check "production never reads the real fault file: the deploy succeeds" $? 0
+check "the real fault file is untouched in production" "$(has_fault production)" yes
+check "no container was frozen in production" "$(paused_calls)" 0
+absent "production logs no fault injection" "$W/out" "fault injection\|FAULT INJECTION"
+
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+arm staging "$REAL_LINE"
+deploy "$CO_A" staging "$A"; check "the very first deploy is never frozen (no previous release)" $? 0
+check "the file is left in place" "$(has_fault staging)" yes
+check "nothing was frozen on the first deploy" "$(paused_calls)" 0
+
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+deploy "$CO_B" staging "$B"
+arm staging "$REAL_LINE"
+echo "$A" > "$FAKE/load-tag"
+rollback "$CO_B" staging "$A"; check "a rollback never freezes anything" $? 0
+check "the real fault file is untouched by a rollback" "$(has_fault staging)" yes
+check "nothing was frozen during the rollback" "$(paused_calls)" 0
+
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+arm staging "$REAL_LINE"; export BG_FAULT_OWNER_UID=999999
+deploy "$CO_B" staging "$B"; check "a real-fault file with the wrong owner is ignored: the deploy succeeds" $? 0
+check "it is left in place and nothing was frozen" "$(has_fault staging)/$(paused_calls)" "yes/0"
+export BG_FAULT_OWNER_UID="$THIS_UID"
+new_world
+make_checkout A; CO_A="$LAST_CO"; A="$LAST_SHA"
+make_checkout B; CO_B="$LAST_CO"; B="$LAST_SHA"
+deploy "$CO_A" staging "$A"
+arm staging "FAULT=backend-unhealthy-pre-switch
+FAULT=post-switch-unhealthy"
+deploy "$CO_B" staging "$B"; check "a file with two lines is ignored" $? 0
+check "nothing was frozen" "$(paused_calls)" 0
+unset BG_FAULT_OWNER_UID
+
 echo
 echo "lab-mode checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
