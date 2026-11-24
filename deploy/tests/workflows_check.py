@@ -98,8 +98,10 @@ for name, data, code in (("cd.yml", cd, cd_code), ("rollback.yml", rb, rb_code))
     check(f"{name}: AWS access comes only from the OIDC action, in the deploying jobs", aws_jobs == token_jobs, str(aws_jobs))
     check(f"{name}: the OIDC session is short (one hour at most)", re.search(r"role-duration-seconds:\s*3600\b", code) is not None)
     group_jobs = list(token_jobs)
-    check(f"{name}: every deploying job shares the one lab concurrency group and never cancels a running deploy",
-          all(data["jobs"][j]["concurrency"]["group"] == "deploy-lab" and data["jobs"][j]["concurrency"]["cancel-in-progress"] is False for j in group_jobs))
+    check(f"{name}: every deploying job is in a per-environment lab concurrency group and never cancels a running deploy",
+          all(str(data["jobs"][j]["concurrency"]["group"]).startswith("deploy-lab-") and data["jobs"][j]["concurrency"]["cancel-in-progress"] is False for j in group_jobs))
+    check(f"{name}: no job uses the old single shared group (a production job waiting for its reviewer would block every staging deploy)",
+          re.search(r"group:\s*deploy-lab\s*$", code, re.M) is None)
     for job in token_jobs:
         spec = data["jobs"][job]
         key_steps = [s for s in spec["steps"] if "secrets.DEPLOY_SSH_KEY" in str(s.get("env", ""))]
@@ -286,9 +288,30 @@ check("ssh-preflight.yml: the AWS account id is masked", (pf_steps[pf_creds[0]].
 check("ssh-preflight.yml: every action is pinned to a full commit SHA", all(re.match(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$", u) for u in re.findall(r"^\s*-?\s*uses:\s*(\S+)", pf_code, re.M)))
 check("ssh-preflight.yml: no expression is expanded inside a script and no shell tracing", not any("${{" in r for r in pf_runs) and not any(re.search(r"set\s+-[a-z]*x", r) for r in pf_runs))
 check("ssh-preflight.yml: a final always() step kills any tunnel that is left", any("AWS-StartPortForwardingSession" in s.get("run", "") and "always()" in str(s.get("if", "")) for s in pf_steps))
-check("ssh-preflight.yml: uses the same lab concurrency group, so it never overlaps a deploy", (pf_job.get("concurrency") or {}).get("group") == "deploy-lab")
+check("ssh-preflight.yml: uses the per-environment lab concurrency group, so it never overlaps a deploy of that Environment", (pf_job.get("concurrency") or {}).get("group") == "deploy-lab-${{ inputs.environment }}")
 check("ssh-preflight.yml: the deliberate failure replaces the host key with a throwaway one, never weakens checking", "wrong-host-key" in pf_code and "StrictHostKeyChecking=no" not in pf_code and "ssh-keygen -q -t ed25519" in pf_code)
 check("ssh-deploy.sh has the --preflight-only mode and sends nothing after the pre-flight in it", "--preflight-only) PREFLIGHT_ONLY=1" in ssh_code and ssh_code.index('if [ "$PREFLIGHT_ONLY" = 1 ]') < ssh_code.index('emit "ssh-deploy: running: ${REMOTE}"'))
+
+print("== staging-verify.yml: exercises staging through the tunnel, changes nothing, never touches production")
+sv_text, sv = load("staging-verify.yml")
+sv_code = uncommented(sv_text)
+sv_on = sv.get("on", sv.get(True)) or {}
+sv_job = sv["jobs"]["staging"]
+sv_steps = sv_job["steps"]
+sv_runs = [s.get("run", "") for s in sv_steps]
+check("staging-verify.yml: manual start only, from main only", list(sv_on) == ["workflow_dispatch"] and "github.ref == 'refs/heads/main'" in str(sv_job.get("if", "")))
+check("staging-verify.yml: bound to the staging Environment and to nothing else (never production)", str(sv_job.get("environment")) == "staging" and "production" not in sv_code.replace("never production", ""))
+check("staging-verify.yml: no default token permissions, id-token only on the one job, no secret at all", sv.get("permissions") == {} and (sv_job.get("permissions") or {}).get("id-token") == "write" and "secrets." not in sv_code and "DEPLOY_SSH_KEY" not in sv_code)
+check("staging-verify.yml: only the staging nginx port (8081) is forwarded, never port 22", '\\"portNumber\\":[\\"8081\\"]' in sv_code and '\\"22\\"' not in sv_code and "ssh " not in sv_code)
+sv_plugin = [i for i, s in enumerate(sv_steps) if "install-ssm-plugin.sh" in s.get("run", "")]
+sv_creds = [i for i, s in enumerate(sv_steps) if "configure-aws-credentials" in str(s.get("uses", ""))]
+check("staging-verify.yml: the pinned plugin is installed BEFORE the AWS credentials, and the account id is masked", len(sv_plugin) == 1 and len(sv_creds) == 1 and sv_plugin[0] < sv_creds[0] and (sv_steps[sv_creds[0]].get("with") or {}).get("mask-aws-account-id") is True)
+check("staging-verify.yml: every action is pinned to a full commit SHA", all(re.match(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$", u) for u in re.findall(r"^\s*-?\s*uses:\s*(\S+)", sv_code, re.M)))
+check("staging-verify.yml: no expression is expanded inside a script and no shell tracing", not any("${{" in r for r in sv_runs) and not any(re.search(r"set\s+-[a-z]*x", r) for r in sv_runs))
+check("cd.yml: staging and production deploy jobs are in DIFFERENT groups, so a production job waiting for its reviewer cannot block a staging deploy", cd["jobs"]["deploy-staging"]["concurrency"]["group"] == "deploy-lab-staging" and cd["jobs"]["deploy-production"]["concurrency"]["group"] == "deploy-lab-production")
+check("staging-verify.yml: runs in its OWN concurrency group, so it can run while a deploy is in progress", (sv_job.get("concurrency") or {}).get("group") == "staging-verify")
+check("staging-verify.yml: the tunnel is always ended (session terminated, process group killed) and the evidence uploaded even on failure", "terminate-session" in sv_code and 'kill -TERM -- "-$TUNNEL_PID"' in sv_code and any("upload-artifact" in str(s.get("uses", "")) and "always()" in str(s.get("if", "")) for s in sv_steps))
+check("staging-verify.yml: traffic mode uses request-loop.sh with a version URL and a JSON summary", "deploy/scripts/request-loop.sh" in sv_code and "--version-url" in sv_code and "--json" in sv_code)
 
 print()
 print(f"workflow checks: {passes} passed, {len(failures)} failed")

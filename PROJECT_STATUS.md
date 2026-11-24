@@ -4,7 +4,7 @@ Last updated: 2026-11-25. Source: git, the GitHub API and real workflow runs. Th
 Labels: **VERIFIED** = a real run or a read-back produced the result; **IMPLEMENTED, NOT EXECUTED** = merged code covered by offline or static checks only; **PENDING**; **BLOCKED**.
 
 ## Where the deployment stands
-Nothing is deployed. `CD_ENABLED` is unset, so every CD run is `skipped`, and `cd.yml` / `rollback.yml` have never run their deploy jobs.
+**Staging is deployed** (the first real deployment, 2026-11-24). `CD_ENABLED` is `true` (owner-authorized for staging); every push to `main` now deploys to staging. **Production has NOT been deployed**: its job waits for the production reviewer and has not been approved.
 
 | Step | State |
 |---|---|
@@ -13,6 +13,8 @@ Nothing is deployed. `CD_ENABLED` is unset, so every CD run is `skipped`, and `c
 | Lab-mode blue/green deploy and rollback scripts, lab-mode tests (PR #49) | IMPLEMENTED, NOT EXECUTED |
 | `cd.yml`, `rollback.yml` for the SSH tunnel; plugin installed before the AWS credentials; account id masked; error-text redaction (PR #50) | IMPLEMENTED, NOT EXECUTED |
 | `infra/lab` Terraform, lab docs, `/var/lib/shopnest` root-owned `0755` in the setup script and bootstrap (PR 4) | IMPLEMENTED, NOT EXECUTED |
+| First real staging deployment (`cd.yml`: gate -> publish-images -> deploy-staging) | **VERIFIED**: CD run [45469834249](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45469834249) for commit `3c53ba7`. The host's own log (artifact `deploy-log-staging-...`) shows the database passwords generated, migrations 001 to 003 applied, the demo catalogue seeded, `backend-blue` validated for health and commit, nginx started, `DEPLOY SUCCEEDED` and `CONFIRMED` with both image digests. Both GHCR packages are public (anonymous pull verified by the run); the published images were pulled by digest and inspected: no secret, non-root, gitleaks clean. First deploy: there was no previous release, so zero downtime is NOT shown by it |
+| Production deploy job | **WAITING for the production reviewer** (never approved by Claude) |
 | GitHub OIDC claims for both Environments | **VERIFIED**: `oidc-diagnostic` runs [45424741285](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45424741285) (staging) and [45425321335](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45425321335) (production) |
 | AWS STS role assumption, staging | **VERIFIED**: `oidc-sts-test` run [45431405176](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45431405176) |
 | AWS STS role assumption, production | **PENDING**: run [45432917228](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45432917228) is waiting for the production reviewer |
@@ -28,7 +30,7 @@ Nothing is deployed. `CD_ENABLED` is unset, so every CD run is `skipped`, and `c
 | A, I | documentation merged | screenshots, clean-clone dry run, live URL decision (D2) |
 | B, C | CI and workflow architecture **VERIFIED** | CD never ran; some screenshots |
 | D | no credential in the repository; production approval **VERIFIED** with the separate `approval-demo` run | final all-history scan |
-| E | code merged; the SSH path to the instance is **VERIFIED by `ssh-preflight` (staging)**; **no deployment** | first staging deploy (needs approval), live evidence |
+| E | staging **deployed** (run 45469834249); production waiting for the reviewer | endpoint checks through `staging-verify`, a second deploy, production approval by the reviewer, screenshots |
 | F | local and offline evidence only | request loop during a real deploy |
 | G | local and offline evidence only | automatic and manual rollback on the instance |
 | H | three deliberate failures with kept failed and recovery runs | the owner's own GitHub Copilot prompts and evidence: **UNAVAILABLE so far**, never reconstructed |
@@ -38,7 +40,7 @@ Deliberate (Part H): 44884178546, 44884809417, 44920064307. Accidental: 44864872
 
 ## Blockers and the next actions
 1. Owner: re-authenticate AWS (`aws login --profile devops`; the session expired) so the host read-back can run, and approve or cancel production STS run 45432917228.
-2. Owner approval: enable `CD_ENABLED` and run the first real **staging** deploy (production only after staging passes and with the reviewer).
+2. Done: `CD_ENABLED=true` and the first staging deploy. Next: `staging-verify` (endpoints), then the Part F request loop during a second staging deploy, then Part G on staging. The production job stays waiting for the reviewer.
 3. On the instance `sudo bash deploy/host/readiness-check.sh` (read-only); the staging `ssh-preflight` already passed. The full list is [`docs/PRE_DEPLOYMENT_CHECKLIST.md`](docs/PRE_DEPLOYMENT_CHECKLIST.md).
 4. After the first deploy: zero-downtime request loop, then a deliberately unhealthy **staging** release (automatic rollback) and a manual rollback.
 5. Owner: the GitHub Copilot exercise for Part H, step by step in [`docs/COPILOT_EXERCISE.md`](docs/COPILOT_EXERCISE.md) (one prompt, three safe failures, exact evidence).

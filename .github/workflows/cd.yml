@@ -152,8 +152,10 @@ jobs:
       contents: read
       id-token: write
     concurrency:
-      # One lab instance: deploys and rollbacks, staging and production, never overlap.
-      group: deploy-lab
+      # One group PER ENVIRONMENT, on purpose. A job waiting for its Environment's reviewer keeps its concurrency group, so with one shared
+      # group the production job (which waits for approval for as long as nobody decides) would block every later staging deploy, rollback
+      # and pre-flight. Overlap on the instance itself is prevented by the host's own lock in the root-owned wrapper (it refuses with exit 4).
+      group: deploy-lab-staging
       cancel-in-progress: false
     env:
       RELEASE_SHA: ${{ needs.gate.outputs.sha }}
@@ -240,7 +242,7 @@ jobs:
       contents: read
       id-token: write
     concurrency:
-      group: deploy-lab
+      group: deploy-lab-production
       cancel-in-progress: false
     env:
       RELEASE_SHA: ${{ needs.gate.outputs.sha }}

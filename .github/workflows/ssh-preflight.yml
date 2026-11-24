@@ -40,8 +40,8 @@ jobs:
       contents: read
       id-token: write
     concurrency:
-      # One lab instance: this never overlaps a deploy or a rollback.
-      group: deploy-lab
+      # The same per-environment group as cd.yml and rollback.yml: it never overlaps a deploy or a rollback of that Environment.
+      group: deploy-lab-${{ inputs.environment }}
       cancel-in-progress: false
     env:
       TARGET_ENV: ${{ inputs.environment }}
