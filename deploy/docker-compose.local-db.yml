@@ -1,10 +1,13 @@
-# LOCAL REHEARSAL ONLY. Layered on top of docker-compose.prod.yml by the deploy scripts when BG_LOCAL_DB=1, so the
+# LOCAL REHEARSAL ONLY (BG_LOCAL_DB=1; the lab instance's separate use of this file is described below). Layered on top of docker-compose.prod.yml by the deploy scripts, so the
 # blue/green logic can be rehearsed on a laptop that has no RDS and no metadata service. It:
 #   - puts a PostgreSQL CONTAINER back (roles from deploy/db/init/01-roles.sh) and points the backends at it with DATABASE_URL;
 #   - defines the migrate and seed one-shot jobs, which the AWS file does NOT have (on AWS they run in CodeBuild);
 #   - replaces the external, fixed-address "edge" network with an ordinary bridge network: the laptop's networking is
 #     kept entirely separate from the AWS networking, and nothing here touches the host firewall.
-# It is refused for staging and production: see bg_init in deploy/scripts/lib/bluegreen-lib.sh.
+# Rehearsal mode (BG_LOCAL_DB=1) is refused for staging and production: see bg_init in deploy/scripts/lib/bluegreen-lib.sh.
+# LAB mode (BG_LAB=1, the infra/lab instance) layers this same file on top of docker-compose.prod.yml for staging and production: each
+# environment is its own Compose project with its own PostgreSQL container on the internal network (no published port). In lab mode
+# bg_init also generates the passwords and sets HTTP_BIND (staging: loopback only; production: all addresses).
 #
 # Extra variables (from the server-side secrets.env of the rehearsal):
 #   POSTGRES_PASSWORD, DB_OWNER_PASSWORD, DB_APP_PASSWORD   (letters and digits only, so they fit in a URL)

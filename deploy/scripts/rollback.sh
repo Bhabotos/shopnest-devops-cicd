@@ -24,8 +24,8 @@ ENV_NAME=""
 SHA=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --env) ENV_NAME="${2:-}"; shift 2 ;;
-    --sha) SHA="${2:-}"; shift 2 ;;
+    --env) [ $# -ge 2 ] || usage; ENV_NAME="$2"; shift 2 ;;
+    --sha) [ $# -ge 2 ] || usage; SHA="$2"; shift 2 ;;
     -h | --help) usage 0 ;;
     *) usage ;;
   esac
@@ -45,11 +45,17 @@ bg_host_guard   # AWS mode: the metadata-service guard, before any container is 
 
 bg_history_has_deployed "$SHA" || bg_die "$SHA is not in the release history as deployed; see $BG_STATE_DIR/history.log"
 if [ "$(bg_image_revision "$SHA" || true)" != "$SHA" ]; then
-  # On AWS the image may have been cleaned up on the host. The digest of every release is recorded at deploy time,
-  # so it is pulled again from ECR; if ECR no longer has it (lifecycle) the rollback is refused before anything changes.
-  [ -f "$BG_STATE_DIR/image-ref-$SHA" ] || bg_die "image shopnest-backend:$SHA is not on this server any more and no ECR digest was recorded for it"
+  # The image may have been cleaned up on the host. The digest of every release is recorded at deploy time, so it is pulled
+  # again from the registry (ECR, or GHCR in lab mode); if the registry no longer has it the rollback is refused before anything changes.
+  registry_name=ECR
+  [ "$BG_DB_MODE" != lab ] || registry_name=GHCR
+  [ -f "$BG_STATE_DIR/image-ref-$SHA" ] || bg_die "image shopnest-backend:$SHA is not on this server any more and no $registry_name digest was recorded for it"
   bg_log "image shopnest-backend:$SHA is not on this server; pulling the digest recorded for that release"
-  bg_pull_image "$(cat "$BG_STATE_DIR/image-ref-$SHA")" "$SHA"
+  if [ "$BG_DB_MODE" = lab ]; then
+    bg_pull_lab_image "$(cat "$BG_STATE_DIR/image-ref-$SHA")" "$SHA" backend
+  else
+    bg_pull_image "$(cat "$BG_STATE_DIR/image-ref-$SHA")" "$SHA"
+  fi
 fi
 if [ ! -d "$BG_FRONTEND_DIR/releases/$SHA" ]; then
   # The artifact reference of every release is recorded at deploy time. If the host lost the files, fetch the same bundle

@@ -9,6 +9,7 @@
 #   $FAKE/nginx_t_fail          `nginx -t` fails
 #   $FAKE/pull_fail             `docker pull` fails (the image is not in the registry any more)
 #   $FAKE/pull_wrong_revision   the pulled image carries a different revision label than the release SHA
+#   $FAKE/frontend_empty        the frontend image holds no index.html (lab mode)
 set -u
 : "${FAKE:?FAKE must point at the fake engine state directory}"
 mkdir -p "$FAKE/running" "$FAKE/images"
@@ -29,10 +30,13 @@ case "${1:-}" in
     log "load"
     if [ -f "$FAKE/load-tag" ]; then cp "$FAKE/load-tag" "$FAKE/images/$(cat "$FAKE/load-tag")"; fi
     exit 0 ;;
-  image) # docker image inspect shopnest-backend:<tag> --format ...
-    tag="${3#shopnest-backend:}"
-    [ -f "$FAKE/images/$tag" ] || exit 1
-    cat "$FAKE/images/$tag"
+  image) # docker image inspect shopnest-backend:<tag> --format ...  (lab mode also inspects shopnest-frontend:<tag>)
+    case "$3" in
+      shopnest-frontend:*) imgfile="$FAKE/images/frontend-${3#shopnest-frontend:}" ;;
+      *) imgfile="$FAKE/images/${3#shopnest-backend:}" ;;
+    esac
+    [ -f "$imgfile" ] || exit 1
+    cat "$imgfile"
     exit 0 ;;
   pull) # docker pull <ref>: remember which revision the pulled image carries
     log "pull $2"
@@ -41,7 +45,19 @@ case "${1:-}" in
     exit 0 ;;
   tag) # docker tag <ref> shopnest-backend:<tag>
     log "tag $2 $3"
-    cp "$FAKE/last_pull_revision" "$FAKE/images/${3#shopnest-backend:}"
+    case "$3" in
+      shopnest-frontend:*) cp "$FAKE/last_pull_revision" "$FAKE/images/frontend-${3#shopnest-frontend:}" ;;
+      *) cp "$FAKE/last_pull_revision" "$FAKE/images/${3#shopnest-backend:}" ;;
+    esac
+    exit 0 ;;
+  create) # docker create <image> (lab mode: a container only to read the frontend files out of)
+    log "create $2"
+    echo fake-container-id
+    exit 0 ;;
+  cp) # docker cp <container>:/usr/share/nginx/html/. <dir>/
+    log "cp $2"
+    [ -f "$FAKE/frontend_empty" ] && exit 0
+    mkdir -p "$3" && echo "frontend files" > "${3%/}/index.html"
     exit 0 ;;
   login)
     cat > /dev/null
@@ -67,7 +83,7 @@ case "$sub" in
       case "$svc" in
         -*) continue ;;
         db) touch "$FAKE/running/db"; log "up db" ;;
-        nginx) served_from_conf; touch "$FAKE/running/nginx"; log "up nginx" ;;
+        nginx) served_from_conf; touch "$FAKE/running/nginx"; log "up nginx"; log "bind ${HTTP_BIND:-unset}" ;;
         backend-blue | backend-green)
           tag="$(tag_of "$svc")"
           log "up $svc $tag"

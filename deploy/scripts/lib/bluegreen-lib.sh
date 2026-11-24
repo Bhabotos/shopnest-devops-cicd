@@ -22,11 +22,15 @@ bg_die() { bg_log "ERROR: $*" >&2; exit 1; }
 bg_require_sha() { [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]] || bg_die "release must be a full 40-character commit SHA"; }
 
 # bg_init <staging|production> <bundle dir that contains deploy/>
-# Two database modes:
-#   rds   (default, the only one allowed for staging and production): the database is the private RDS
-#         instance. Needs <env>/runtime.env. No password is read, stored or checked here.
-#   local (BG_LOCAL_DB=1): a PostgreSQL CONTAINER, for rehearsing the blue/green logic on a laptop. Needs
-#         <env>/secrets.env. Refused unless the stack is plainly not a real environment (see below).
+# Three modes:
+#   rds   (default): the database is the private RDS instance (infra/terraform design). Needs <env>/runtime.env. No password
+#         is read, stored or checked here.
+#   lab   (BG_LAB=1, set by the lab SSM documents in infra/lab): ONE small instance runs both environments, each as its own
+#         Compose project with its own PostgreSQL CONTAINER on an internal network (no published port). Images come from GHCR
+#         by digest and the release is a git checkout of the exact commit. The passwords are GENERATED on the host at the first
+#         deploy into <env>/secrets.env (mode 600, never printed, never in git). Staging is bound to the loopback address only.
+#   local (BG_LOCAL_DB=1): the same containers, for rehearsing the blue/green logic on a laptop. Needs <env>/secrets.env.
+#         Refused unless the stack is plainly not a real environment (see below).
 bg_init() {
   BG_ENV="${1:-}"
   BG_RELEASE_DIR="${2:-}"
@@ -45,7 +49,13 @@ bg_init() {
   BG_COMPOSE_FILES=(-f "$BG_COMPOSE_FILE")
   mkdir -p "$BG_STATE_DIR" "$BG_UPSTREAM_DIR" "$BG_FRONTEND_DIR/releases" "$BG_LOG_DIR"
 
-  if [ "${BG_LOCAL_DB:-}" = "1" ]; then
+  if [ "${BG_LAB:-}" = "1" ]; then
+    [ "${BG_LOCAL_DB:-}" != "1" ] || bg_die "BG_LAB=1 and BG_LOCAL_DB=1 are mutually exclusive"
+    BG_DB_MODE=lab
+    # The lab reuses the local-database file: a PostgreSQL container, one ordinary bridge network, no fixed addresses.
+    [ -f "$BG_RELEASE_DIR/deploy/docker-compose.local-db.yml" ] || bg_die "no deploy/docker-compose.local-db.yml in $BG_RELEASE_DIR"
+    BG_COMPOSE_FILES+=(-f "$BG_RELEASE_DIR/deploy/docker-compose.local-db.yml")
+  elif [ "${BG_LOCAL_DB:-}" = "1" ]; then
     BG_DB_MODE=local
     bg_require_rehearsal_stack "BG_LOCAL_DB=1"
     [ -f "$BG_RELEASE_DIR/deploy/docker-compose.local-db.yml" ] || bg_die "no deploy/docker-compose.local-db.yml in $BG_RELEASE_DIR"
@@ -59,7 +69,12 @@ bg_init() {
   # shellcheck disable=SC1090
   . "$BG_RELEASE_DIR/deploy/env/$BG_ENV.env"
   set +a
-  if [ "$BG_DB_MODE" = local ]; then
+  if [ "$BG_DB_MODE" = lab ]; then
+    bg_load_lab_secrets
+    # Only the production environment is public (the security group admits port 80 only); staging listens on loopback.
+    if [ "$BG_ENV" = production ]; then HTTP_BIND=0.0.0.0; else HTTP_BIND=127.0.0.1; fi
+    export HTTP_BIND
+  elif [ "$BG_DB_MODE" = local ]; then
     bg_load_local_secrets
   else
     bg_load_runtime
@@ -169,6 +184,23 @@ bg_load_local_secrets() {
   done
 }
 
+# Lab mode: the passwords of this environment's database container are generated on the host at the first deploy and kept in
+# <env>/secrets.env (mode 600, readable by root only). They are never printed, never passed through GitHub or Systems Manager and
+# never committed. A later deploy reuses the file; the database roles are created only on an EMPTY data volume, from these values.
+bg_random_password() { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+bg_load_lab_secrets() {
+  local secrets="$BG_ENV_DIR/secrets.env" key
+  if [ ! -f "$secrets" ]; then
+    bg_log "first deploy of $BG_ENV: generating its database passwords into $secrets (mode 600; the values are never printed)"
+    (
+      umask 077
+      for key in POSTGRES_PASSWORD DB_OWNER_PASSWORD DB_APP_PASSWORD; do printf '%s=%s\n' "$key" "$(bg_random_password)"; done > "$secrets.tmp"
+    ) || bg_die "could not generate the database passwords"
+    mv "$secrets.tmp" "$secrets" || bg_die "could not store the database passwords"
+  fi
+  bg_load_local_secrets
+}
+
 # Everything a container mounts from the host lives at a STABLE path under the environment directory.
 # If a service mounted a path inside the release bundle, its definition would change with every
 # release and Compose would recreate it; for the database that is a restart in the middle of a live
@@ -176,7 +208,7 @@ bg_load_local_secrets() {
 bg_stage_config() {
   [ -f "$BG_RELEASE_DIR/deploy/nginx/nginx.conf" ] || bg_die "missing deploy/nginx/nginx.conf in the bundle"
   mkdir -p "$BG_ENV_DIR/nginx/conf" || bg_die "could not create the config directories"
-  if [ "$BG_DB_MODE" = local ]; then
+  if [ "$BG_DB_MODE" = local ] || [ "$BG_DB_MODE" = lab ]; then
     [ -d "$BG_RELEASE_DIR/deploy/db/init" ] || bg_die "missing deploy/db/init in the bundle"
     mkdir -p "$BG_ENV_DIR/db-init" || bg_die "could not create the config directories"
     cp -a "$BG_RELEASE_DIR/deploy/db/init/." "$BG_ENV_DIR/db-init/" || bg_die "could not stage the database init scripts"
@@ -192,7 +224,7 @@ bg_stage_config() {
 #   local: start the database container if it is not running, and NEVER recreate or restart it:
 #          --no-recreate leaves a running container alone even if Compose thinks its definition changed.
 bg_db_up() {
-  if [ "$BG_DB_MODE" = local ]; then
+  if [ "$BG_DB_MODE" = local ] || [ "$BG_DB_MODE" = lab ]; then
     bg_compose up -d --no-recreate db || return 1
     bg_retry 60 2 bg_compose exec -T db pg_isready -h 127.0.0.1 -U shopnest_admin -d shopnest
   else
@@ -439,6 +471,13 @@ bg_record_bundle() {
 # install only its frontend files. Returns 1 (changing nothing) if there is no record, no bucket, or any check fails.
 bg_refetch_frontend() {
   local sha="$1" key hash tmp
+  if [ "$BG_DB_MODE" = lab ]; then
+    # Lab mode: the frontend of every release is a GHCR image, recorded by digest at deploy time; pull it again and unpack it.
+    [ -f "$BG_STATE_DIR/frontend-ref-$sha" ] || return 1
+    bg_pull_lab_image "$(cat "$BG_STATE_DIR/frontend-ref-$sha")" "$sha" frontend || return 1
+    bg_frontend_from_image "$sha"
+    return
+  fi
   [ -f "$BG_STATE_DIR/bundle-$sha" ] || return 1
   [ -n "${ARTIFACT_BUCKET:-}" ] || return 1
   read -r key hash < "$BG_STATE_DIR/bundle-$sha"
@@ -492,4 +531,64 @@ bg_pull_image() {
   revision="$(bg_image_revision "$sha" || true)"
   [ "$revision" = "$sha" ] || bg_die "image revision label '$revision' does not match $sha"
   printf '%s\n' "$ref" > "$BG_STATE_DIR/image-ref-$sha"
+}
+
+# ---- release images from GHCR (the delivery path in lab mode) -------------------------------------
+# Both images (the backend, and the frontend that carries the built static files) are identified by DIGEST, never by a tag, so
+# what runs is exactly what CI pushed and the SSM caller cannot swap an image by moving a tag. The packages are PUBLIC, so the
+# host pulls without any credential. Each image must carry the revision label of the release it is deployed as.
+bg_lab_image_ref_ok() { # <ref> <backend|frontend>
+  case "${2:-}" in backend | frontend) ;; *) return 1 ;; esac
+  [[ "${1:-}" =~ ^ghcr\.io/[a-z0-9][a-z0-9-]{0,38}/shopnest-$2@sha256:[0-9a-f]{64}$ ]]
+}
+
+# bg_validate_lab_image_ref <ref> <backend|frontend>: PURE (it changes nothing).
+bg_validate_lab_image_ref() {
+  bg_lab_image_ref_ok "$1" "$2" || bg_die "the $2 image reference must be ghcr.io/<owner>/shopnest-$2@sha256:<64 hex digits> (a digest, never a tag)"
+}
+
+bg_lab_image_revision() { docker image inspect "$1" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2> /dev/null; }
+
+# bg_pull_lab_image <ref> <release sha> <backend|frontend>: pull by digest, tag it shopnest-<kind>:<sha> for Compose, require its
+# revision label to be <sha>, and remember the reference per release so a later rollback can pull it again.
+bg_pull_lab_image() {
+  local ref="$1" sha="$2" kind="$3" revision record
+  bg_validate_lab_image_ref "$ref" "$kind"
+  docker pull "$ref" > /dev/null || bg_die "could not pull $ref (is the GHCR package public, and does the digest exist?)"
+  docker tag "$ref" "shopnest-$kind:$sha" || bg_die "could not tag the pulled $kind image"
+  revision="$(bg_lab_image_revision "shopnest-$kind:$sha" || true)"
+  [ "$revision" = "$sha" ] || bg_die "$kind image revision label '$revision' does not match $sha"
+  if [ "$kind" = backend ]; then record="image-ref-$sha"; else record="frontend-ref-$sha"; fi
+  printf '%s\n' "$ref" > "$BG_STATE_DIR/$record"
+}
+
+# bg_frontend_from_image <sha>: unpack the static files from shopnest-frontend:<sha> (already pulled) into this release's
+# directory, kept for rollback. A frontend without a non-empty index.html is refused before anything changes.
+bg_frontend_from_image() {
+  local sha="$1" tmp cid
+  tmp="$(mktemp -d)"
+  cid="$(docker create "shopnest-frontend:$sha")" || { rm -rf "$tmp"; bg_log "could not create a container to read the frontend files"; return 1; }
+  if ! docker cp "$cid:/usr/share/nginx/html/." "$tmp/"; then
+    docker rm "$cid" > /dev/null 2>&1 || true
+    rm -rf "$tmp"
+    bg_log "could not copy the frontend files out of the image"
+    return 1
+  fi
+  docker rm "$cid" > /dev/null 2>&1 || true
+  # The nginx container runs as an unprivileged user: the files and the directories must be readable by it.
+  chmod -R a+rX "$tmp"
+  if ! bg_frontend_ok "$tmp"; then
+    rm -rf "$tmp"
+    bg_log "the frontend image has no non-empty index.html"
+    return 1
+  fi
+  bg_frontend_install "$sha" "$tmp" || { rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+
+# bg_lab_check_checkout <sha> <dir>: the release scripts must run from a git checkout of exactly the commit being deployed.
+bg_lab_check_checkout() {
+  local head
+  head="$(git -C "$2" rev-parse HEAD 2> /dev/null || true)"
+  [ "$head" = "$1" ] || bg_die "lab mode must run from a git checkout of $1 (found '${head:-no checkout}')"
 }
