@@ -1,0 +1,152 @@
+name: oidc-sts-test
+
+# Diagnostic only. Proves that GitHub can assume the Environment's AWS role through OIDC (AssumeRoleWithWebIdentity) and nothing more:
+# the one AWS call is `sts get-caller-identity`, which needs no IAM permission. No checkout, no SSH, no SSM, no Docker, no EC2 or other
+# AWS change, no secrets, no stored credentials, no deployment. Manual start only, from main only. The role ARN and the region come from
+# the selected Environment's variables AWS_ROLE_ARN and AWS_REGION (as in cd.yml); no account ID or role ARN is written in this file.
+# The credentials the OIDC action obtains are short-lived (900 seconds), are masked by the action and are never printed, saved or uploaded.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment whose AWS role is assumed
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+
+permissions: {}
+
+jobs:
+  assume-role:
+    name: STS role assumption (${{ inputs.environment }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+    steps:
+      - name: Validate the Environment variables
+        env:
+          SELECTED_ENVIRONMENT: ${{ inputs.environment }}
+          ROLE_ARN_VAR: ${{ vars.AWS_ROLE_ARN }}
+          REGION_VAR: ${{ vars.AWS_REGION }}
+          SESSION_NAME_INPUT: oidc-sts-test-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::This diagnostic runs only from refs/heads/main (got ${GITHUB_REF})."
+            exit 1
+          fi
+          case "${SELECTED_ENVIRONMENT}" in
+            staging|production) ;;
+            *)
+              echo "::error::Unsupported environment '${SELECTED_ENVIRONMENT}' (expected staging or production)."
+              exit 1
+              ;;
+          esac
+          if [ -z "${ROLE_ARN_VAR}" ]; then
+            echo "::error::The variable AWS_ROLE_ARN is not set on the ${SELECTED_ENVIRONMENT} Environment."
+            exit 1
+          fi
+          if [ -z "${REGION_VAR}" ]; then
+            echo "::error::The variable AWS_REGION is not set on the ${SELECTED_ENVIRONMENT} Environment."
+            exit 1
+          fi
+          # This lab is fixed to Mumbai: any other region, even a valid one, is refused.
+          if [ "${REGION_VAR}" != "ap-south-1" ]; then
+            echo "::error::AWS_REGION on the ${SELECTED_ENVIRONMENT} Environment must be exactly ap-south-1."
+            exit 1
+          fi
+          # The exact role name for this Environment; the ARN must be a plain aws-partition IAM role ARN ending in it (no path, no extra text).
+          expected_role="shopnest-lab-github-deploy-${SELECTED_ENVIRONMENT}"
+          if ! [[ "${ROLE_ARN_VAR}" =~ ^arn:aws:iam::([0-9]{12}):role/([A-Za-z0-9_+=,.@-]+)$ ]]; then
+            echo "::error::AWS_ROLE_ARN on the ${SELECTED_ENVIRONMENT} Environment is not a plain IAM role ARN (arn:aws:iam::<12 digits>:role/<name>)."
+            exit 1
+          fi
+          if [ "${BASH_REMATCH[2]}" != "${expected_role}" ]; then
+            echo "::error::AWS_ROLE_ARN on the ${SELECTED_ENVIRONMENT} Environment is not the role ${expected_role}."
+            exit 1
+          fi
+          expected_account="${BASH_REMATCH[1]}"
+          # The session name the action will use (the same expression, passed through env) must be exactly oidc-sts-test-<run id>.
+          if ! [[ "${GITHUB_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "::error::GITHUB_RUN_ID is not numeric."
+            exit 1
+          fi
+          expected_session="oidc-sts-test-${GITHUB_RUN_ID}"
+          if [ "${SESSION_NAME_INPUT}" != "${expected_session}" ]; then
+            echo "::error::The session name given to the credentials action does not equal ${expected_session}."
+            exit 1
+          fi
+          # The identity AWS must report after the assumption, worked out here from the validated values only, before any AWS call.
+          expected_arn="arn:aws:sts::${expected_account}:assumed-role/${expected_role}/${expected_session}"
+          # Every value passed a strict pattern or an exact comparison above, so it is safe to hand on. Not secrets: an account ID, a role name.
+          {
+            echo "EXPECTED_ACCOUNT=${expected_account}"
+            echo "EXPECTED_ROLE_NAME=${expected_role}"
+            echo "EXPECTED_SESSION=${expected_session}"
+            echo "EXPECTED_ARN=${expected_arn}"
+          } >> "${GITHUB_ENV}"
+          echo "The Environment variables, the role name, the region, the session name and the expected identity for ${SELECTED_ENVIRONMENT} are consistent."
+
+      - name: Assume the AWS role through OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 900
+          role-session-name: oidc-sts-test-${{ github.run_id }}
+          mask-aws-account-id: false
+
+      - name: Verify the caller identity
+        env:
+          SELECTED_ENVIRONMENT: ${{ inputs.environment }}
+          REGION_VAR: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016  # the Python program is meant to be passed literally; nothing in it is a shell expression
+          aws sts get-caller-identity --output json --region "${REGION_VAR}" | python3 -I -c '
+          import json, os, sys
+
+          ident = json.load(sys.stdin)
+          account = ident.get("Account")
+          arn = ident.get("Arn")
+          user_id = ident.get("UserId")
+
+          print("Account: " + str(account))
+          print("Arn: " + str(arn))
+          print("UserId: " + str(user_id))
+
+          expected_account = os.environ["EXPECTED_ACCOUNT"]
+          role_name = os.environ["EXPECTED_ROLE_NAME"]
+          expected_session = os.environ["EXPECTED_SESSION"]
+          expected_arn = os.environ["EXPECTED_ARN"]
+          expected_prefix = "arn:aws:sts::" + expected_account + ":assumed-role/" + role_name + "/"
+
+          problems = []
+          if account != expected_account:
+              problems.append("the account is not the one in AWS_ROLE_ARN")
+          if not str(arn).startswith(expected_prefix):
+              problems.append("the assumed role is not " + role_name + " in the expected account")
+          elif str(arn) != expected_arn:
+              problems.append("unexpected session name (expected " + expected_session + ")")
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("### STS role assumption (" + os.environ["SELECTED_ENVIRONMENT"] + ")\n\n")
+                  fh.write("| field | value |\n|---|---|\n")
+                  fh.write("| Account | `" + str(account) + "` |\n")
+                  fh.write("| Arn | `" + str(arn) + "` |\n")
+                  fh.write("| UserId | `" + str(user_id) + "` |\n\n")
+                  fh.write("Result: " + ("FAILED - " + "; ".join(problems) if problems else "the expected account and role were assumed") + "\n")
+
+          if problems:
+              for p in problems:
+                  print("::error::" + p)
+              sys.exit(1)
+          print("OK: the account from AWS_ROLE_ARN and the role " + role_name + " are confirmed for " + os.environ["SELECTED_ENVIRONMENT"] + ".")
+          '
