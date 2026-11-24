@@ -3,13 +3,14 @@
 ShopNest is a small e-commerce product: a React frontend, a Node.js REST API and a PostgreSQL database. This repository replaces ShopNest's
 manual, SSH-and-restart deployments with an automated, secure pipeline built on GitHub Actions, and records what has been proven and what has not.
 
-> **Honest status (updated 2026-11-23).** The application, the CI pipeline, the local Docker environment and a local blue/green and rollback
-> rehearsal are built and verified. The **deployment target is now a minimal lab instance** (one EC2 `t3.small`, Systems Manager instead of SSH, PostgreSQL in a Docker container, images on GHCR, no NAT Gateway, load balancer, RDS or ECR):
-> see [`infra/lab/README.md`](infra/lab/README.md) and [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md). It is **written as code and tested offline only: no AWS resource exists, nothing has been deployed, no Terraform plan has been made for it, and
-> the CD and rollback workflows have never executed their deploy jobs** (every CD run so far was skipped). Zero downtime, automatic rollback on the instance, and the live URL are
-> **not proven**; the blue/green rehearsal was done on local Docker only. The earlier, larger AWS design in `infra/terraform/` (RDS, ECR, ALB, NAT, CodeBuild) stays in the repository for reference and is no longer used by the deployment workflows.
-> The live application URL is **pending** (see [Live URL](#live-url)). Every claim below says whether it is implemented, tested locally, tested on GitHub
-> Actions, or still pending. The per-requirement record is [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md).
+> **Honest status (updated 2026-11-25).** The application, the CI pipeline and the local Docker environment are built and verified, and **the pipeline has deployed STAGING for real** on one EC2
+> instance: images built by GitHub Actions and published to GHCR by digest, SSH through an AWS Systems Manager tunnel (no inbound port 22), blue/green with health-gated switching and automatic rollback.
+> Real, kept runs show **six deploy or rollback operations under request loops (5237 requests, 0 failed)**, an **automatic rollback** and a **manual rollback** (see [Evidence](#evidence-and-workflow-links)).
+> **Production has NOT been deployed:** its job waits for the production reviewer, who has not approved it, so the **live URL is pending** ([Live URL](#live-url)). Two caveats are stated where they matter:
+> the automatic rollback was triggered by a failure *injected into the post-switch verification* (the new release was actually healthy), and the zero-downtime numbers come from a sparse request loop (about 2 requests per second).
+> **Part H:** three deliberate failures with kept runs exist, but the Copilot troubleshooting for them is unavailable; the Copilot exercise is prepared in [`docs/COPILOT_EXERCISE.md`](docs/COPILOT_EXERCISE.md) and has **not** been done yet.
+> **Screenshots** for Parts E, F and G are pending ([`docs/SCREENSHOT_CHECKLIST.md`](docs/SCREENSHOT_CHECKLIST.md)); none is claimed. Every claim below says whether it was proven by a real run, tested offline, or is pending. The per-requirement record is
+> [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md); the verified list of run links is [`docs/EVIDENCE_INDEX.md`](docs/EVIDENCE_INDEX.md).
 
 ## Contents
 1. [Part A: CI/CD concepts for ShopNest management](#part-a-cicd-concepts-for-shopnest-management)
@@ -94,7 +95,7 @@ flowchart LR
 
 The diagram shows the application as run locally and in the laptop rehearsal (one host, Docker-hosted PostgreSQL).
 
-### On AWS: the lab instance (written, not deployed)
+### On AWS: the lab instance (staging deployed; production waiting for approval)
 
 ```mermaid
 flowchart TB
@@ -203,12 +204,12 @@ flowchart TB
     ds[deploy scripts and Compose: ShellCheck, offline suites,<br/>Compose security checks, workflow rules]
   end
   ci -->|workflow_run: CI succeeded on main, CD_ENABLED=true| cd
-  subgraph cd [cd.yml - lab instance, never run]
-    gate --> pub[publish-images: build, push to GHCR by SHA,<br/>read digests, anonymous-pull check] --> staging[deploy-staging<br/>OIDC + Systems Manager]
+  subgraph cd [cd.yml - lab instance, runs on every push to main while CD_ENABLED=true]
+    gate --> pub[publish-images: build, push to GHCR by SHA,<br/>read digests, anonymous-pull check] --> staging[deploy-staging<br/>OIDC + SSH through the SSM tunnel]
     staging --> prod[deploy-production<br/>Environment production: WAITS FOR APPROVAL]
   end
   manual([workflow_dispatch]) --> rb
-  subgraph rb [rollback.yml - never run]
+  subgraph rb [rollback.yml - manual, staging or production]
     g[guard: CD off, non-main] --> v[validate] --> r[rollback staging, or production after approval]
   end
   tf[terraform-ci.yml<br/>fmt, init, validate, IAM rules and lab checks, gitleaks]
@@ -218,9 +219,11 @@ flowchart TB
 | Workflow | Trigger | State |
 |---|---|---|
 | `ci.yml` | pull request and push to `main` | **runs and passes on GitHub** (on the pull requests #22 to #26 and on the pushes to `main`). Jobs: Frontend (Node 22 and 24: install, lint, test, build, upload `dist`), Backend (Node 22 and 24: install, lint, tests against a throwaway PostgreSQL service container, fail if any test was skipped), Backend Docker image (needs Backend), Deploy scripts and Compose (shell syntax, ShellCheck, the offline blue/green, metadata-guard and CI-helper suites, AWS-mode and rehearsal-mode Compose security assertions, the deployment-workflow rules). The matrix jobs run in parallel. The updated "Deploy scripts and Compose" job ran and passed on pull requests #24 to #26 (its first run on #26 failed on one test assertion that depended on a Git file mode; the assertion was corrected and the failed run is kept in the Actions history) |
-| `cd.yml` | `workflow_run` after CI on `main` | **rewritten for the lab instance; its deploy jobs have never executed.** Every run so far was `skipped` because the variable `CD_ENABLED` is unset. Jobs: `gate` (CI succeeded for the exact commit, still the tip of `main`), `publish-images` (build backend and frontend images, push to GHCR tagged with the commit SHA, read back the digests, check an anonymous pull), `deploy-staging` (Environment `staging`, SSH through the SSM tunnel), `deploy-production` (Environment `production`, held for the reviewer's approval). SSH only through the pinned SSM tunnel (no inbound port 22), one secret per Environment (`DEPLOY_SSH_KEY`), AWS access by OIDC. **Tested offline and statically only** |
-| `rollback.yml` | manual dispatch | **rewritten for staging and production on the lab instance; never run.** It **fails closed**: a request while `CD_ENABLED` is not `true`, from a ref other than `main`, or for an unknown environment is refused with an error. The job is bound to the chosen Environment, so a production rollback needs the reviewer's approval. It never runs migrations |
+| `cd.yml` | `workflow_run` after CI on `main` | **ran for real on staging** (runs [45469834249](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45469834249), [45473412551](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45473412551), [45477964033](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45477964033), [45479105861](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45479105861), [45485258931](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485258931), [45486448054](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45486448054)). Jobs: `gate` (CI succeeded for the exact commit, still the tip of `main`, `CD_ENABLED` is `true`), `publish-images` (build backend and frontend, push to GHCR tagged with the commit SHA, read back the digests, anonymous-pull check), `deploy-staging` (Environment `staging`, SSH through the SSM tunnel, blue/green, automatic rollback), `deploy-production` (Environment `production`: **held for the reviewer and never approved**). Concurrency is per Environment (a waiting production job must not block staging). A run can show `cancelled` when a newer run's pending production job superseded its own, even though its staging deploy succeeded |
+| `rollback.yml` | manual dispatch | **ran for real on staging**: run [45485651117](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485651117) rolled staging back to the first deployed commit `3c53ba7` (`ROLLBACK SUCCEEDED`). It **fails closed**: a request while `CD_ENABLED` is not `true`, from a ref other than `main`, or for an unknown environment is refused; the target must be an ancestor of `main` and recorded as deployed on the host; the job is bound to the chosen Environment, so a production rollback waits for the reviewer |
 | `terraform-ci.yml` | Terraform-related pushes and pull requests | runs static checks only, no AWS access (format, init without a backend, validate, secret scan) for `infra/terraform` and, in a separate job, for `infra/lab` plus the lab architecture checks |
+| `ssh-preflight.yml` | manual dispatch | proves OIDC, the SSM tunnel, the pinned host key and the forced command for an Environment and **deploys nothing** (staging run [45459661738](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45459661738) succeeded); `simulate: wrong-host-key` is the safe deliberate failure for the Part H exercise |
+| `staging-verify.yml` | manual dispatch | checks staging from outside (frontend, `/health`, `/version` hidden, database-backed `/api/products`) or runs the Part F request loop, through an SSM port-forward; never touches production |
 | `pipeline-demo.yml` | push to `demo/**` and manual dispatch | the Part H demonstration workflow (generated with GitHub Copilot, per the owner's records in `docs/copilot/`); see [Evidence](#evidence-and-workflow-links) |
 
 **Required checks** on `main` (branch protection, verified by reading the settings on 2026-11-21): Frontend (Node 22), Frontend (Node 24), Backend (Node 22),
@@ -257,7 +260,7 @@ Separate configuration for staging and production exists as non-secret files in 
 
 ## Terraform infrastructure
 
-Status: **`infra/lab/` is written and statically validated (`terraform fmt`, `terraform validate`, 64 static architecture checks). Not planned, not applied. No AWS resource exists.**
+Status: **`infra/lab/` is written, statically validated (`terraform fmt`, `terraform validate`, 87 static architecture checks in CI) and applied by the owner: the instance, its security group (TCP 80 only) and the two OIDC deploy roles exist (read-only checks on 2026-11-24; the apply record is in [`docs/PROJECT_HISTORY.md`](docs/PROJECT_HISTORY.md)).**
 Passing validation does not mean AWS will accept the configuration. Region `ap-south-1`; Terraform CLI profile name `devops` locally; no root credentials and no access keys. Details: [`infra/lab/README.md`](infra/lab/README.md).
 
 What `infra/lab/` describes:
@@ -272,39 +275,53 @@ files are stale and must never be applied. Approximate cost of the lab: about $2
 
 ## CD architecture and current limitations
 
-- **Written, never run:** `cd.yml` verifies CI succeeded for the exact `main` commit, builds the backend and frontend images, pushes both to **GHCR** tagged with the commit SHA and reads back their **digests**, checks that the packages can be pulled
-  anonymously, and deploys over **SSH through a Systems Manager port-forwarding tunnel** (no inbound port 22): it fetches the repository at that commit, pulls both images by digest, applies the migrations, and runs the blue/green deploy with automatic rollback.
-  Exit codes 0, 1 and 3 come back unchanged; code 4 means the result could not be confirmed. The sequence, with a diagram, is in [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md).
-- **Production** is deployed by `deploy-production` only, which is bound to the `production` Environment (GitHub holds it until the reviewer approves) and runs only after staging deployed. **Not yet demonstrated on a real deployment.**
-- **Never run against AWS.** The behaviour is covered by offline tests with fakes (see [Testing](#testing-and-validation)), not by any real run.
-- **Manual GitHub steps remain:** make the two GHCR packages public (one time), capture the real OIDC subject claims, set the Environment variables, then set `CD_ENABLED`.
-- **Instructor confirmation pending:** the assignment says deployment is "over SSH"; the design uses Systems Manager instead (the owner's decision). The instructor has not confirmed it, so it is a **risk to Part E**. The live-URL rule (Part D forbids a server
-  address in the repository, while the assignment asks for a live URL) is likewise the owner's decision, not the instructor's.
+**Flow (`cd.yml`, ran for real on staging):** CI succeeds on a push to `main` -> `gate` (exact commit, still the tip of `main`, `CD_ENABLED=true`) -> `publish-images` (backend and frontend built for the commit, pushed to **GHCR** tagged with the SHA, **digests** read back, anonymous pull checked)
+-> `deploy-staging` -> `deploy-production` (held for the reviewer). The deploy is **SSH through a Systems Manager port-forwarding tunnel** (no inbound port 22): the Environment's own key (one per Environment, forced command, pinned host key with strict checking) can start only two
+root-owned wrappers on the instance, which verify that the commit is part of `main`, fetch it, pull both images by digest (the revision label must equal the commit), apply migrations and run the blue/green deploy. The client reports success only when the host confirms that this commit went live from these digests. Diagram and details: [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md).
+
+**What actually ran:** the first staging deployment ([https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45469834249](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45469834249): migrations applied, catalogue seeded, `backend-blue` validated, `DEPLOY SUCCEEDED`, `CONFIRMED` with both digests), three further blue/green deployments (2, 3 and 4), a fault-injected deploy that rolled back automatically, a manual rollback and a restore. Host logs are kept under [`docs/evidence/`](docs/evidence/).
+
+**Limits, stated plainly:**
+- **Production has not been deployed.** Its job waits for the `production` reviewer and has never been approved. The staging deployments prove the mechanism; they do not prove a production release.
+- One `t3.small` hosts both environments as separate Compose projects (separate ports, networks, volumes and database containers); one host is a single point of failure and there is no database backup (demo data). Staging listens on loopback only and is reached through Session Manager.
+- While `CD_ENABLED=true`, **every push to `main` deploys to staging**. Each run also queues a production job that waits for the reviewer.
+- **GitHub concurrency:** a job waiting for a reviewer keeps its concurrency group, which blocked every later staging deploy on the first real run; groups are now per Environment ([`cd.yml`](.github/workflows/cd.yml)), and the host's own lock still serializes the instance.
+- **Public logs** show the instance id and, once, the role ARN with the AWS account id (credentials are masked); none of this is a credential.
+- The installed host wrapper version was not re-checked after the review fixes; update it with `setup-deploy-host.sh` before any production deployment.
+- **"Over SSH" (Part E):** the tunnel carries real SSH, so the wording is met literally. The live-URL question (Part D forbids a server address in the repository, the assignment asks for a live URL) is the owner's decision and is still open.
 
 ## Zero-downtime strategy and trade-offs
 
-**Strategy: blue/green on the host.** Two backend containers (blue, green) exist; Nginx sends `/api` to the active one. A release starts on the idle colour, must report `/health` OK and `/version`
-equal to its commit SHA, and only then does Nginx switch; the old colour keeps running briefly so in-flight requests finish. If validation fails, traffic never moves.
-Scripts: [`deploy/scripts/bluegreen-deploy.sh`](deploy/scripts/bluegreen-deploy.sh), [`deploy/scripts/rollback.sh`](deploy/scripts/rollback.sh), [`deploy/nginx/nginx.conf`](deploy/nginx/nginx.conf).
+**Strategy: blue/green on the host.** Two backend containers (blue, green) exist; Nginx sends `/api` and `/health` to the active one. A release starts on the idle colour and must report `/health` OK and `/version` equal to its commit SHA; only then does Nginx switch (a tested, graceful reload),
+and the old colour keeps running for 10 s so in-flight requests finish. If validation fails, traffic never moves. `/version` is internal by design (the public origin answers 404), so the running commit is read from the host log. Scripts:
+[`deploy/scripts/bluegreen-deploy.sh`](deploy/scripts/bluegreen-deploy.sh), [`deploy/scripts/rollback.sh`](deploy/scripts/rollback.sh), [`deploy/nginx/nginx.conf`](deploy/nginx/nginx.conf).
 
-**What was measured (local Docker only, not AWS; release identifiers in the rehearsal are synthetic):**
-a deploy during a request loop returned 238 of 238 successful responses, a rejected broken release 107 of 107, and a manual rollback 161 of 161
-([`docs/evidence/bluegreen-local/`](docs/evidence/bluegreen-local/)). That rehearsal **predates the AWS-mode changes** (private RDS, ECR digests, the metadata guard) and has not been repeated since.
-**Zero downtime has not been shown on AWS.** A fault that appears only after the switch cost about 20 seconds of failed
-requests before the automatic rollback (79 of 171 requests in one rehearsal): such a failure is recovered, not invisible.
+**Measured on staging (real instance, real deployments).** `deploy/scripts/request-loop.sh` sent requests to `/health` through a Systems Manager port-forward while staging deployments ran:
 
-Trade-offs: two backends run during a deploy (more memory); the database schema must stay compatible with both the old and new release; one host is a single point of failure (the AWS design adds a
-second production instance and a rolling deploy, which is not yet written).
+| Request loop | Deployments covered | Requests | Failed | Timeouts | Latency p50 / p95 / p99 |
+|---|---|---|---|---|---|
+| [https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45473006606](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45473006606) | deploy 2 (`blue` to `green`) | 1117 | **0** | 0 | 240 / 242 / 244 ms |
+| [https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45477290060](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45477290060) | deploys 3 and 4 | 1850 | **0** | 0 | 239 / 243 / 246 ms |
+| [https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45484404230](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45484404230) | fault-injected deploy with automatic rollback, manual rollback, restore deploy | 2270 | **0** | 0 | 205 / 206 / 211 ms |
+
+That is **six real deploy or rollback operations observed with no failed request** (deploys 2, 3 and 4; the fault-injected deploy with its automatic rollback; the manual rollback; the restore) (summaries, logs and host timelines: [`docs/evidence/zero-downtime/`](docs/evidence/zero-downtime/) and [`docs/evidence/rollback/`](docs/evidence/rollback/)).
+**What this does not prove:** the loop sends only about 2 requests per second (the tunnel round trip is about 0.2 s), so a failure shorter than roughly half a second could fall between two requests; it requested `/health` only (the frontend and API were checked separately);
+and the latencies include the tunnel. It is strong measured evidence for these deployments, not a proof of zero downtime in general. The local Docker rehearsal ([`docs/evidence/bluegreen-local/`](docs/evidence/bluegreen-local/): 238 of 238, 107 of 107 and 161 of 161 responses)
+predates the AWS-mode changes and is kept for reference. A fault that appears only *after* the switch can cost failed requests before the rollback completes (79 of 171 in one local rehearsal): such a failure is recovered, not invisible.
+
+Trade-offs: two backends run during a deploy (more memory); the database schema must stay compatible with both the old and new release (migrations are additive and a rollback never reverses them); one host is a single point of failure.
 
 ## Rollback strategy
 
-- **Automatic:** a release that fails its readiness or post-switch check is rejected or reversed to the last known good release, recorded in the release history.
-- **Manual:** `rollback.yml` (staging, or production after the reviewer's approval) sends a fixed Systems Manager document that runs `deploy/scripts/rollback.sh` from the current `main`. It refuses a release that is not recorded as deployed, pulls the **recorded image digests** (backend and frontend)
-  again from GHCR if the host lost them, and moves traffic only after the release passes the same validation as a deploy. It is **never run**.
-- **Exit codes:** `0` success; `1` failed with the previous release serving (or restored); `2` bad arguments; `3` the deploy or rollback **and** the recovery failed, which needs an operator now; `4` the result could not be confirmed
-  (treat as failed). Codes 1 and 3 are covered by the offline suites only; **no real code 3 has been observed**.
+- **Automatic (demonstrated on staging):** if the post-switch verification fails, traffic is switched back to the previous release, which is verified again; the deploy exits 1 ("failed, previous release serving") and the production job never runs. In CD run [https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485258931](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485258931) the host log shows
+  `FAULT INJECTION ... armed`, `post-switch verification FAILED; returning traffic to the previous release`, `previous release c5f6ef3... is live again (automatic rollback complete)` and `DEPLOY FAILED (exit 1): the previous release is serving`.
+  **Caveat:** the failure was injected into the *verification* by a one-shot, staging-only, root-owned fault file armed on the host (see [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md#part-g-demonstrations-staging-only); production never reads it, a rollback never arms it, the first deploy is never sabotaged). The new release's containers were actually healthy,
+  so this shows the real rollback mechanism, not a real broken backend. A design for a genuinely unhealthy backend is in [`docs/PART_G_REAL_FAULT_DESIGN.md`](docs/PART_G_REAL_FAULT_DESIGN.md); it is **not implemented and not run**.
+- **Manual (demonstrated on staging):** `rollback.yml` (staging, or production after the reviewer's approval) runs `deploy/scripts/rollback.sh` from the tip of `main`. It refuses a release that is not recorded as deployed, re-pulls the recorded image digests if the host lost the images (tested offline; **not exercised on the instance**, the images were still there),
+  and moves traffic only after the release passes the same validation as a deploy. Run [https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485651117](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485651117) rolled staging back to `3c53ba7` (`ROLLBACK SUCCEEDED`); run [https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45486448054](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45486448054) then restored the newest release.
+- **Health checks:** the backend `/health` runs `SELECT 1` against PostgreSQL; the deploy requires it (and the commit) before the switch and again after it, through nginx and the published port; Docker health checks cover the database.
+- **Exit codes:** `0` success; `1` failed with the previous release serving (or restored): **observed on staging**; `2` bad arguments; `3` the deploy or rollback **and** the recovery failed, which needs an operator now (offline suites only; **no real code 3 has been observed**); `4` the result could not be confirmed (treat as failed).
 - **Database:** a rollback **never runs migrations** and **never reverses the schema**. Recovery from a bad migration is a fix-forward migration or restoring the database volume (the lab instance keeps no backup: demo data).
-- **Evidence:** local rehearsal and offline tests only. The demonstration required by the assignment (a deliberately broken release recovering by itself) is **pending** a real deployment.
 
 ## Security practices
 
@@ -353,17 +370,30 @@ Status words: **Done** = real evidence exists; **Partial** = built, with the gap
 |---|---|---|---|
 | A. CI/CD concepts | 5 | Written in this README; awaiting the owner's review | [Part A](#part-a-cicd-concepts-for-shopnest-management) |
 | B. CI pipeline | 15 | Partial: CI passes on GitHub; a failing required check blocking a merge is demonstrated by the deliberate failing test on PR #28 (the failed and recovered runs are in `docs/screenshots/part-h/`; the blocked-merge view itself was not captured); the owner's own tests are pending | [workflows](#github-actions-workflows) |
-| C. Workflow architecture | 10 | Partial: CI, matrix, parallel jobs, artifact done; the rewritten CD never run; screenshots partial (the CI job graph appears in the Part H screenshots; no CD run exists to show) | [workflows](#github-actions-workflows) |
+| C. Workflow architecture | 10 | Done: CI (matrix, parallel jobs, artifacts) and CD (gate, publish, staging, production behind approval) have **real runs**; screenshots partial (the CI job graph appears in the Part H screenshots; CD run screenshots pending) | [workflows](#github-actions-workflows) |
 | D. Secrets and configuration | 10 | Partial: no secrets in the repo; the OIDC deploy roles (one per Environment) exist in AWS (read-only check, 2026-11-24). GitHub Environments `staging` and `production` are configured (main-only; `production` requires reviewer `Bhabotos`; 4 variables and the `DEPLOY_SSH_KEY` secret per Environment, names verified 2026-11-24). **Manual approval demonstrated with a separate demonstration workflow only:** `approval-demo` run [45128964969](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45128964969) (commit `3738e0bb22f4e67164abecec11d0f7a58779216b`, `main`) paused at "Waiting for review", was approved by `Bhabotos`, and finished `success`. It deploys nothing and touches no AWS; the `production-approval` job in `cd.yml` has never run, and no real secret usage or production deployment exists. Screenshots in the repository: [waiting for review](docs/screenshots/part-d/waiting%20.png) and [approved, success](docs/screenshots/part-d/Human%20Approval.png) (neither shows the run ID in a URL; the run page title `approval-demo #1`, commit `3738e0b`, the approval by `Bhabotos` and the success status are visible, and the run ID is confirmed by the GitHub API record). Missing: a screenshot of the Environment settings page | [secrets](#secrets-and-variables) |
-| E. Deployment to EC2 | 15 | Pending: the instance, the roles and the Environment configuration exist, and the SSH-over-SSM-tunnel deployment code is merged and tested offline; **no deployment has run** | [Terraform](#terraform-infrastructure), [lab deployment](docs/LAB_DEPLOYMENT.md) |
-| F. Zero downtime | 15 | Partial: local evidence only; the lab deploy path is not exercised and zero downtime is **not proven** until a request loop against the live URL shows zero failures during a real deploy | [strategy](#zero-downtime-strategy-and-trade-offs), [how it will be proven](docs/LAB_DEPLOYMENT.md) |
-| G. Monitoring and rollback | 15 | Partial: local and offline evidence only; the rewritten rollback workflow and the automatic-rollback demonstration have never run on the instance | [rollback](#rollback-strategy) |
+| E. Deployment to EC2 | 15 | **Staging deployed and verified on EC2** (run [45469834249](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45469834249), `staging-verify` [45472728637](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45472728637), SSH preflight [45459661738](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45459661738)); **production not deployed** (reviewer approval pending); live URL pending; screenshots pending | [CD](#cd-architecture-and-current-limitations), [lab deployment](docs/LAB_DEPLOYMENT.md), [evidence index](docs/EVIDENCE_INDEX.md) |
+| F. Zero downtime | 15 | **Measured on staging:** 6 real deploy or rollback operations under request loops, 5237 requests, 0 failed, 0 timeouts; the sampling limit is stated; screenshots pending | [strategy and numbers](#zero-downtime-strategy-and-trade-offs), [`docs/evidence/zero-downtime/`](docs/evidence/zero-downtime/) |
+| G. Monitoring and rollback | 15 | **Demonstrated on staging:** health checks, automatic rollback (injected post-switch failure, real rollback logic), manual rollback to `3c53ba7`, restore; the genuinely-unhealthy-backend variant is designed, not run; screenshots pending | [rollback](#rollback-strategy), [`docs/evidence/rollback/`](docs/evidence/rollback/) |
 | H. Debugging and Copilot | 10 | Partial: three deliberate failures (YAML syntax error, deployment health check, failing test), each with a failed and a recovery run, root cause and fix reference, written up in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md); Copilot's generation of `pipeline-demo.yml` is documented in [`docs/copilot/`](docs/copilot/). **Not available:** the Copilot troubleshooting prompts and responses (see [Evidence](#evidence-and-workflow-links)); failure 2 has no fix commit (its recovery was a corrected workflow input). **Screenshots:** 13 are in [`docs/screenshots/part-h/`](docs/screenshots/part-h/) and mapped to the runs in the evidence document (some are partial). **Missing:** the expanded health-check step for failure 2 and a screenshot of the blocked merge for failure 3 | [evidence](#evidence-and-workflow-links), [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md) |
 | I. Documentation | 5 | Partial: this README and the AWS integration document; the Part H screenshots are added (some are partial); a clean-clone dry run was completed locally on 2026-11-23 for commit `053648a` (frontend 39 passed; backend 160 passed, 11 PostgreSQL integration tests skipped because `TEST_DATABASE_URL` was unset; workflow checks 77 passed; Terraform IAM checks 97 passed) and an all-history gitleaks 8.30.1 scan found no leaks: [`docs/evidence/clean-clone-2026-11-23/`](docs/evidence/clean-clone-2026-11-23/). That test did not include `approval-demo.yml`, did not run on AWS or in GitHub Actions, and did not run the integration tests; the 2 Part D screenshots are in `docs/screenshots/part-d/`; no CI-matrix, CD or live-application screenshots exist; the live URL is pending | this file, [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md) |
 
 ## Evidence and workflow links
 
-Workflow runs on GitHub (repository: <https://github.com/Bhabotos/shopnest-devops-cicd>):
+**Deployment evidence (Parts E, F, G; staging).** Every run below was verified against the GitHub API on 2026-11-25; the full list, with all failed and cancelled runs and their classification, is [`docs/EVIDENCE_INDEX.md`](docs/EVIDENCE_INDEX.md).
+
+| Evidence | Run / folder | What it shows |
+|---|---|---|
+| SSH path | [ssh-preflight 45459661738](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45459661738) | OIDC, SSM tunnel, pinned host key, forced command, wrapper `--check`; nothing started |
+| First staging deployment | [CD 45469834249](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45469834249), [`docs/evidence/staging-deploy-1/`](docs/evidence/staging-deploy-1/) | images by digest, migrations, seed, blue validated, `CONFIRMED`; production job waiting |
+| Endpoint checks | [staging-verify 45487248329](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45487248329) | frontend 200, `/health` 200, `/version` hidden (404), `/api/products` 200 (backend to PostgreSQL) |
+| Zero downtime (3 data sets) | [`docs/evidence/zero-downtime/`](docs/evidence/zero-downtime/), loops [45473006606](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45473006606), [45477290060](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45477290060), [45484404230](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45484404230) | 5237 requests, 0 failed, across six operations |
+| Automatic rollback | [CD 45485258931](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485258931) (failed on purpose) | injected post-switch failure, real rollback, previous release serving, production skipped |
+| Manual rollback and restore | [Rollback 45485651117](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45485651117), [CD 45486448054](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45486448054), [`docs/evidence/rollback/`](docs/evidence/rollback/) | rollback to `3c53ba7`, then restore to the newest release |
+
+**Failed runs are evidence and are never deleted.** Deliberate: the three Part H failures below and the fault-injected CD run above. Accidental (kept, with their fixes): CI 44864872114, 44916673865, 45444399255 (a ShellCheck failure fixed in the next commit) and `staging-verify` 45472728637 (it wrongly expected `/version` to be public; fixed in PR #55). None of the accidental failures counts as a required Part H failure, and none involved GitHub Copilot.
+
+Part H and earlier workflow runs on GitHub (repository: <https://github.com/Bhabotos/shopnest-devops-cicd>):
 
 | Run | What it shows |
 |---|---|
@@ -400,14 +430,15 @@ and commit links) is in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_
 - **Settings and overview (all partial):** [branch protection](docs/screenshots/part-h/Branch%20Protection.png), [protection rules list](docs/screenshots/part-h/CI%20Configure.png),
   [Actions run list](docs/screenshots/part-h/Github%20actions.png), [README top](docs/screenshots/part-h/Readme.png).
 
-No screenshot shows GitHub Copilot, and none shows an AWS deployment, a zero-downtime release or a rollback on AWS: none has been performed. PR #28 stays **open and unmerged** and must not be merged.
+No screenshot shows GitHub Copilot. **Screenshots of the staging deployment, the request loop and the rollbacks are pending**: they must be captured by the owner from the runs linked above (exact pages and file names: [`docs/SCREENSHOT_CHECKLIST.md`](docs/SCREENSHOT_CHECKLIST.md)); none is claimed or fabricated. PR #28 stays **open and unmerged** and must not be merged.
 
 Local evidence: [`docs/evidence/phase2/`](docs/evidence/phase2/) (lint, tests, build, stack verification, secret scans) and
 [`docs/evidence/bluegreen-local/`](docs/evidence/bluegreen-local/) (blue/green and rollback rehearsal; **local, not AWS, and before the AWS-mode changes**).
-Screenshots for other parts (for example a CD run or a deployed application) do not exist, because CD has never run and nothing is deployed; no such screenshot is claimed here.
+Real run logs and machine-readable results for Parts F and G are in [`docs/evidence/zero-downtime/`](docs/evidence/zero-downtime/), [`docs/evidence/rollback/`](docs/evidence/rollback/) and [`docs/evidence/staging-deploy-1/`](docs/evidence/staging-deploy-1/) (the public SSH key fingerprint in the first line of each host log is masked for the secret scanner).
 
 ## Live URL
 
-**Pending.** The application is not deployed, so there is no live address. The owner has decided that the deployed application is public on HTTP port 80 (production only), so the address will be `http://<public address>/`. Retrieve it locally after an approved deployment
-with `terraform output -raw public_ip` in `infra/lab` (see [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md#live-url)). **No address is written in this repository yet.** Writing it here is a deliberate step after a real deployment; Part D forbids a server address
-in the repository while the assignment asks for a live URL, and the instructor has not confirmed how to reconcile the two.
+**Pending.** The public application is **production**, and production has **not** been deployed: its job waits for the reviewer and has not been approved. **Staging is deployed but is not public** (it listens on the instance's loopback address and is reached through Session Manager), so it has no URL.
+The owner has decided that the deployed application is public on HTTP port 80 (production only), so the address will be `http://<public address>/`. It is retrieved locally after an approved production deployment with `terraform output -raw public_ip` in `infra/lab`
+(see [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md#live-url)). **No address is written in this repository.** Writing it here is a deliberate step after a real production deployment; Part D forbids a server address in the repository while the assignment asks for a live URL,
+and how to reconcile the two is still open.
