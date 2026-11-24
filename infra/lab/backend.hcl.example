@@ -1,0 +1,6 @@
+# Copy to backend.hcl (git-ignored) and fill in the real value:
+#   terraform init -backend-config=backend.hcl
+# The bucket is the EXISTING lab state bucket (this configuration never creates or deletes it). Its name contains the AWS account
+# ID, which must not appear in the repository, so it lives only in the untracked copy. The key, region, encryption and locking are
+# fixed in versions.tf.
+bucket = "<name of the existing lab state bucket>"

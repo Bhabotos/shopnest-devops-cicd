@@ -1,0 +1,12 @@
+# Never commit state, plans, provider binaries, or the files that hold your account ID and bucket name.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+backend.hcl
+!backend.hcl.example

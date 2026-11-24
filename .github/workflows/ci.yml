@@ -301,6 +301,8 @@ jobs:
         # Proves strict host key checking against the pinned key, the pre-flight, the exit codes, and that the tunnel, the SSM session and
         # the key are cleaned up on every path. It does not prove AWS, sshd or the instance: that needs the first real run.
         run: bash deploy/tests/ssh-deploy.test.sh
+      - name: Lab Terraform follows the approved minimal architecture (static; reads infra/lab only)
+        run: bash deploy/tests/lab.test.sh
       - name: Lab Compose (a PostgreSQL container per environment, internal only, only nginx publishes a port)
         env:
           # Throwaway placeholders that exist only for this step; no real secret is involved.

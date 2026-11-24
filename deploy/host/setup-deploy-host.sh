@@ -18,6 +18,7 @@
 #      address (the tunnel arrives from there), and only the forced command for the key's environment. The home directory, ~/.ssh and authorized_keys are root-owned, so the deploy user
 #      cannot add keys or drop these restrictions
 #   6. /opt/shopnest and everything the deploy user owned in it become root-owned
+#   7. /var/lib/shopnest (the release lock's directory) is root-owned, 0755
 # It does not touch sshd's configuration, so key-only authentication stays as it is.
 set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -29,6 +30,7 @@ ENTRY=shopnest-ssh-entry
 SUDOERS_FILE=/etc/sudoers.d/deploy
 CONF_FILE=/etc/shopnest/release.conf
 SHOPNEST_ROOT=/opt/shopnest
+STATE_DIR=/var/lib/shopnest
 
 DEPLOY_USER=deploy
 REPOSITORY=""
@@ -145,6 +147,8 @@ verify() {
   check "the SSH entry point matches deploy/host/shopnest-ssh-entry.sh" cmp -s "$HERE/shopnest-ssh-entry.sh" "$SBIN/$ENTRY"
   check "$CONF_FILE is root-owned and well formed" conf_ok
   check "$SHOPNEST_ROOT is root-owned and not writable by others" owned_by_root_not_writable "$SHOPNEST_ROOT"
+  check "$STATE_DIR (the release lock lives there) is 0755" bash -c '[ "$(stat -c %a "$1")" = 755 ]' _ "$STATE_DIR"
+  check "$STATE_DIR and every parent are root-owned and not writable by group or others" owned_by_root_not_writable "$STATE_DIR"
   check "no file in $SHOPNEST_ROOT is owned by the deploy user" bash -c '! find "$1" -xdev -user "$2" 2> /dev/null | grep -q .' _ "$SHOPNEST_ROOT" "$DEPLOY_USER"
   check "home, .ssh and authorized_keys are root-owned" bash -c 'for p in "/home/$1" "/home/$1/.ssh" "/home/$1/.ssh/authorized_keys"; do [ "$(stat -c %u "$p")" = 0 ] && [ $((8#$(stat -c %a "$p") & 8#022)) -eq 0 ] || exit 1; done' _ "$DEPLOY_USER"
   check "authorized_keys: every key is restricted, loopback-only and bound to one environment" authorized_keys_restricted
@@ -258,5 +262,11 @@ chown -h root:root "$SHOPNEST_ROOT"
 chmod 0755 "$SHOPNEST_ROOT"
 # -h: a symbolic link the deploy user planted is re-owned itself, never the file it points to
 find "$SHOPNEST_ROOT" -xdev -user "$DEPLOY_USER" -exec chown -h root:root {} +
+
+# 7. the directory of the release lock (deploy/host/shopnest-release.sh refuses to run unless it and every parent are root-owned and not
+# writable by group or others): created or corrected here, so the host does not depend on the bootstrap's umask
+install -d -o root -g root -m 0755 "$STATE_DIR"
+chown -h root:root "$STATE_DIR"
+chmod 0755 "$STATE_DIR"
 
 verify

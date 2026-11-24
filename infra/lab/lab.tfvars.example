@@ -1,0 +1,28 @@
+# Copy to lab.tfvars (git-ignored) and adjust. Nothing here is a secret, but the account ID must stay out of the repository:
+#   terraform plan -var-file=lab.tfvars
+#
+# TWO VALUES ARE DELIBERATELY NOT IN THIS FILE. Add them to your own UNTRACKED lab.tfvars:
+#   allowed_account_ids   the AWS account ID(s) this stack may be applied to, as a list of 12-digit strings; the provider refuses any other
+#   vpc_cidr              a private IPv4 range of your choice for the dedicated VPC, /16 or larger (the one public subnet is its second /24).
+#                         It is not written here because the repository's secret scanner flags every IPv4 literal.
+
+# Defaults, shown for reference:
+# aws_profile         = "devops"
+# instance_type       = "t3.small"
+# root_volume_size_gb = 20
+# swap_size_gb        = 1
+# use_elastic_ip      = true
+# existing_instance_profile = ""   # set to the NAME of a pre-provisioned instance profile to reuse it (Terraform only reads it);
+#                                  # empty creates the lab's own role and profile. See README.md.
+
+# ---- CI/CD (leave enable_cicd false for the first apply; turn it on only after the checks in README.md) ----
+# enable_cicd       = true
+# github_repository = "<owner>/<name>"
+# Exactly one of these two (an account can hold only one GitHub OIDC provider; check first whether it exists):
+# create_github_oidc_provider = true
+# github_oidc_provider_arn    = "arn:aws:iam::<account id>:oidc-provider/token.actions.githubusercontent.com"
+# The REAL subject claims, captured from a workflow run (see README.md), never guessed:
+# github_oidc_subjects = {
+#   staging    = "repo:<owner>/<name>:environment:staging"
+#   production = "repo:<owner>/<name>:environment:production"
+# }

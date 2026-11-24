@@ -1,5 +1,8 @@
 # GitHub Setup (partly executed, see Status)
 
+> **Current design (2026-11-24): SSH through an SSM port-forwarding tunnel.** Variables of EACH of the `staging` and `production` Environments (different `AWS_ROLE_ARN`): `AWS_ROLE_ARN`, `AWS_REGION`, `LAB_INSTANCE_ID`, `SSH_HOST_KEY` (the instance's public host key, pinned). Secret of each Environment: `DEPLOY_SSH_KEY` (a different key per Environment). Repository variable: `CD_ENABLED` (not set). The two GHCR packages must also be public. All are set on both Environments except `CD_ENABLED` (names verified through the API 2026-11-24). See [`docs/LAB_DEPLOYMENT.md`](LAB_DEPLOYMENT.md). Older text below that names `ECR_REPOSITORY`, `ARTIFACT_BUCKET`, `MIGRATOR_PROJECT`, `STAGING_INSTANCE_ID`, `SSM_DEPLOY_DOCUMENT` or `SSM_ROLLBACK_DOCUMENT` describes a superseded design.
+
+
 Status: instructions, partly executed. CLI-verified 2026-11-19: the repository exists and is public, `main` and the feature branches have been pushed, and secret scanning and push protection are enabled (sections 2 and 3). Branch protection on `main` (section 5) was applied on 2026-11-20 and read back again on 2026-11-21: see the VERIFIED LIVE CONFIGURATION table in section 5 and [`docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md`](evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md). GitHub Environments (section 4), Actions secrets and variables: read-only snapshot from 2026-11-21: 0 GitHub Environments, 0 Actions secrets, 0 Actions variables, 0 Dependabot secrets, and the variable `CD_ENABLED` unset (see "Environments, secrets and variables snapshot" in [`docs/evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md`](evidence/BRANCH_PROTECTION_READBACK_2026-11-21.md)). This is a point-in-time snapshot, not a permanent configuration: they are created when the deployment phases need them, and CD stays disabled while `CD_ENABLED` is unset. The other settings in section 3 were not checked against these instructions.
 Do not add any server IP, DNS name or URL to this file or any repository file (live URL pending
 instructor clarification).
@@ -62,7 +65,7 @@ Settings -> Environments:
 
 Note: with a single maintainer, leave "Prevent self-review" OFF for `production`, otherwise nobody can approve.
 
-**There are no GitHub secrets in the current design** (the old `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`, `EC2_HOST`, `EC2_USER` and `SSH_SG_ID` names are obsolete).
+**The one secret in the current design is `DEPLOY_SSH_KEY` per Environment** (the old `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`, `EC2_HOST`, `EC2_USER` and `SSH_SG_ID` names are obsolete).
 Names below were read from `cd.yml` and `rollback.yml` on `main` (`7d88e9b`):
 
 | Scope | Variable | Purpose | Read by |

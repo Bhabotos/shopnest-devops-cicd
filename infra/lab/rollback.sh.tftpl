@@ -1,0 +1,27 @@
+#!/bin/bash
+# The ONLY command the rollback SSM document runs on the instance (Terraform fills in the environment and the repository).
+# It fetches the rollback tooling from this PUBLIC repository at a "carrier" commit (the current main), then rolls the environment
+# back to TargetSha, which must be recorded as deployed on this host. The rollback uses the same validation as a deploy (the old
+# release must be healthy and report its own commit before traffic moves) and it NEVER runs migrations: the database schema is never
+# reversed automatically.
+# Exit codes of rollback.sh pass through: 0 rolled back; 1 failed, the live release is unchanged or restored; 3 failed AND the
+# recovery failed (needs an operator).
+set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+umask 022   # the nginx and database containers run as unprivileged users and must be able to read the staged files
+export SHOPNEST_HOME=/opt/shopnest
+export BG_LAB=1
+TARGET_SHA='{{ TargetSha }}'
+CARRIER_SHA='{{ CarrierSha }}'
+[ -f /var/lib/shopnest/bootstrap-complete ] || { echo "the host bootstrap has not completed (see /var/lib/shopnest/bootstrap-failed)"; exit 4; }
+WORK="$SHOPNEST_HOME/incoming/carrier-$CARRIER_SHA"
+rm -rf "$WORK"
+mkdir -p "$WORK"
+cd "$WORK"
+git init --quiet
+git fetch --quiet --depth 1 "https://github.com/${repository}.git" "$CARRIER_SHA"
+git checkout --quiet FETCH_HEAD
+[ "$(git rev-parse HEAD)" = "$CARRIER_SHA" ] || { echo "the fetched commit is not $CARRIER_SHA"; exit 4; }
+rc=0
+bash deploy/scripts/rollback.sh --env '${environment}' --sha "$TARGET_SHA" || rc=$?
+exit "$rc"

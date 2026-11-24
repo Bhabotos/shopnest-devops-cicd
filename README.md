@@ -3,15 +3,13 @@
 ShopNest is a small e-commerce product: a React frontend, a Node.js REST API and a PostgreSQL database. This repository replaces ShopNest's
 manual, SSH-and-restart deployments with an automated, secure pipeline built on GitHub Actions, and records what has been proven and what has not.
 
-> **Honest status (updated 2026-11-21).** The application, the CI pipeline, the local Docker environment and a local blue/green and rollback
-> rehearsal are built and verified. The **AWS integration** (private RDS, Secrets Manager, ECR, S3, CodeBuild, Systems Manager, GitHub OIDC, a metadata-service guard) is
-> **written as code and tested offline**, but **no AWS resource exists, nothing has been deployed, no Terraform plan has been made for the current configuration, and the
-> CD and rollback workflows have never executed their jobs** (the CD runs so far were skipped). Zero downtime, automatic rollback and the metadata-service isolation are
-> **not proven on AWS**; the blue/green rehearsal was done on local Docker only. The AWS-integration code was merged into `main` through five pull requests (#22 to #26), and its
-> offline test suites and static checks ran and passed in GitHub Actions on those pull requests. That proves the code and its rules against fakes, **not** any behaviour on AWS.
+> **Honest status (updated 2026-11-23).** The application, the CI pipeline, the local Docker environment and a local blue/green and rollback
+> rehearsal are built and verified. The **deployment target is now a minimal lab instance** (one EC2 `t3.small`, Systems Manager instead of SSH, PostgreSQL in a Docker container, images on GHCR, no NAT Gateway, load balancer, RDS or ECR):
+> see [`infra/lab/README.md`](infra/lab/README.md) and [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md). It is **written as code and tested offline only: no AWS resource exists, nothing has been deployed, no Terraform plan has been made for it, and
+> the CD and rollback workflows have never executed their deploy jobs** (every CD run so far was skipped). Zero downtime, automatic rollback on the instance, and the live URL are
+> **not proven**; the blue/green rehearsal was done on local Docker only. The earlier, larger AWS design in `infra/terraform/` (RDS, ECR, ALB, NAT, CodeBuild) stays in the repository for reference and is no longer used by the deployment workflows.
 > The live application URL is **pending** (see [Live URL](#live-url)). Every claim below says whether it is implemented, tested locally, tested on GitHub
-> Actions, or still pending. The AWS design, the deployment sequence and the full proof status are in [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md);
-> the per-requirement record is [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md); the overall plan is [`docs/PROJECT_EXECUTION_ROADMAP.md`](docs/PROJECT_EXECUTION_ROADMAP.md).
+> Actions, or still pending. The per-requirement record is [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md).
 
 ## Contents
 1. [Part A: CI/CD concepts for ShopNest management](#part-a-cicd-concepts-for-shopnest-management)
@@ -63,13 +61,13 @@ Staging is continuously deployed. **Production deployment and its approval gate 
 |---|---|
 | Presentation | React and Vite, served by Nginx in a container |
 | Application | Node.js and Express 5, Zod validation, `pg`, the AWS SDK (Secrets Manager client) |
-| Data | PostgreSQL 16: a Docker container locally; a **private Amazon RDS** instance in the AWS design |
+| Data | PostgreSQL 16 in a Docker container on an internal network (locally, and in the lab instance's two environments); the earlier AWS design used a private Amazon RDS instance |
 | Runtime | Node.js 22 and 24 (tested in CI); local development on Node.js 24 |
 | Tests | Vitest, Supertest, React Testing Library; offline shell suites with fake Docker and fake AWS |
-| Containers | Docker and Docker Compose; third-party images pinned by version and digest |
+| Containers | Docker and Docker Compose; third-party images pinned by version and digest; the application images are published to **GHCR** tagged with the commit SHA and deployed by digest |
 | Pipelines | GitHub Actions (`ci.yml`, `cd.yml`, `rollback.yml`, `terraform-ci.yml`, and the Part H demonstration workflow `pipeline-demo.yml`) |
-| Infrastructure | Terraform (AWS, region `ap-south-1`): VPC, ALB, EC2, RDS, ECR, S3, IAM, plus (optional, off by default) a GitHub OIDC role, CodeBuild and SSM documents. Written, **not applied** |
-| Deployment mechanism | Systems Manager command documents and CodeBuild (no SSH, no inbound port), written, **never run** |
+| Infrastructure | Terraform (AWS, region `ap-south-1`), `infra/lab/`: a dedicated VPC, one public subnet, an Internet Gateway, one `t3.small` with a public address, HTTP 80 inbound only; no NAT Gateway, load balancer, RDS or ECR. The earlier, larger design in `infra/terraform/` is kept for reference. Written, **not applied** |
+| Deployment mechanism | SSH through an AWS Systems Manager port-forwarding tunnel (no inbound port 22): each Environment has its own forced-command key that can start only two root-owned wrappers on the instance; GitHub Actions authenticates to AWS through OIDC and the images are pulled from GHCR by digest; written and tested offline, **never run on the instance** |
 | Quality and security | ESLint, ShellCheck, actionlint, gitleaks, GitHub secret scanning and push protection |
 
 ## Three-tier architecture
@@ -96,30 +94,28 @@ flowchart LR
 
 The diagram shows the application as run locally and in the laptop rehearsal (one host, Docker-hosted PostgreSQL).
 
-### On AWS (design; not deployed)
+### On AWS: the lab instance (written, not deployed)
 
 ```mermaid
 flowchart TB
-  user([Browser<br/>allowed CIDRs only]) -->|HTTP 80| alb[Application Load Balancer<br/>public subnets]
-  subgraph private [Private subnets]
-    subgraph ec2 [EC2 instance: no public IP, no inbound SSH]
-      nginx[nginx] --> blue[backend-blue]
-      nginx -.-> green[backend-green]
+  user([Browser]) -->|HTTP 80| nginxp
+  subgraph vpc [Dedicated VPC, one public subnet, Internet Gateway, no NAT]
+    subgraph ec2 [One t3.small: inbound TCP 80 only, port 22 closed, no key pair]
+      subgraph prod [Compose project: production]
+        nginxp[nginx :80] --> bp[backend blue / green] --> dbp[(PostgreSQL container<br/>internal network)]
+      end
+      subgraph stg [Compose project: staging]
+        nginxs[nginx 127.0.0.1:8081] --> bs[backend blue / green] --> dbs[(PostgreSQL container<br/>internal network)]
+      end
     end
-    cb[CodeBuild migrator and bootstrap]
-    rds[(RDS PostgreSQL 16<br/>TLS required)]
   end
-  alb --> nginx
-  blue --> rds
-  green --> rds
-  cb --> rds
-  gh[GitHub Actions<br/>OIDC, no stored keys] -->|"push image, upload bundle, start migrator"| aws[(ECR, S3, CodeBuild)]
-  gh -->|"Systems Manager: 2 fixed documents"| ec2
+  gh[GitHub Actions] -->|"images by digest"| ghcr[(GHCR)]
+  gh -->|"OIDC, then SSH (forced command) through an SSM port-forwarding tunnel"| ssm[Systems Manager] --> ec2
+  ec2 -->|"git fetch at the commit, docker pull by digest"| ghcr
 ```
 
-The ALB listens on HTTP only (no domain or certificate yet). The frontend is shipped as static files in the release bundle (S3), the backend as an image (ECR, referenced by digest), and the
-database is private RDS reached over verified TLS. The full component list, security groups, identities and sequence diagrams are in [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md).
-GitHub renders these diagrams from the Mermaid source; rendering on GitHub has **not** been checked.
+Both environments run on the one instance as separate Compose projects; **only production is public** (port 80), staging listens on the loopback address and is reached through Session Manager. The databases have no published port and sit on an
+internal Docker network. Details, limits and the proof status: [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md). GitHub renders these diagrams from the Mermaid source; rendering on GitHub has **not** been checked.
 
 ## Repository structure
 
@@ -170,7 +166,9 @@ server certificate against the pinned bundle in `backend/certs/`. The two modes 
 | Metadata-guard rules (offline) | `bash deploy/tests/imds-guard.test.sh` | fake `iptables` and Docker; no root |
 | CI helpers (offline) | `bash deploy/tests/ci-helpers.test.sh` | bundle, image push, migrator and Systems Manager runner, against fake AWS |
 | Workflow security rules (static) | `bash deploy/tests/workflows.test.sh` | reads the workflow files; needs Python with PyYAML |
-| Terraform IAM and gating (static) | `bash deploy/tests/terraform-iam.test.sh` | reads the `.tf` files; no Terraform or AWS |
+| Terraform IAM and gating (static; the earlier design) | `bash deploy/tests/terraform-iam.test.sh` | reads the `.tf` files of `infra/terraform`; no Terraform or AWS |
+| Lab deploy and rollback decisions (offline) | `bash deploy/tests/lab-mode.test.sh` | fake Docker; no containers; digests, generated passwords, loopback staging, refused releases, rollback re-pull |
+| Lab Terraform architecture (static) | `bash deploy/tests/lab.test.sh` | reads `infra/lab`; no Terraform or AWS |
 | Terraform format and validity | `cd infra/terraform && terraform fmt -check -recursive && terraform validate` | needs an initialised working directory; contacts nothing |
 | Local stack verification | `bash deploy/scripts/verify-stack.sh` | needs Docker; creates and removes its own throwaway Compose project |
 | Backend image check | `bash deploy/scripts/verify-backend-build.sh` | needs Docker |
@@ -205,28 +203,24 @@ flowchart TB
     ds[deploy scripts and Compose: ShellCheck, offline suites,<br/>Compose security checks, workflow rules]
   end
   ci -->|workflow_run: CI succeeded on main, CD_ENABLED=true| cd
-  subgraph cd [cd.yml - staging only, never run]
-    gate --> package[package: image + one bundle] --> staging
-    subgraph staging [deploy-staging, OIDC]
-      direction TB
-      s1[push image to ECR, read digest] --> s2[CodeBuild migrator<br/>a failure stops here] --> s3[upload bundle to S3] --> s4[Systems Manager deploy]
-    end
-    staging --> note[production: notice only, not deployed]
+  subgraph cd [cd.yml - lab instance, never run]
+    gate --> pub[publish-images: build, push to GHCR by SHA,<br/>read digests, anonymous-pull check] --> staging[deploy-staging<br/>OIDC + Systems Manager]
+    staging --> prod[deploy-production<br/>Environment production: WAITS FOR APPROVAL]
   end
   manual([workflow_dispatch]) --> rb
   subgraph rb [rollback.yml - never run]
-    g[guard: refuses production, CD off, non-main] --> v[validate] --> r[rollback over Systems Manager]
+    g[guard: CD off, non-main] --> v[validate] --> r[rollback staging, or production after approval]
   end
-  tf[terraform-ci.yml<br/>fmt, init, validate, IAM rules, gitleaks]
+  tf[terraform-ci.yml<br/>fmt, init, validate, IAM rules and lab checks, gitleaks]
   demo[pipeline-demo.yml<br/>Part H demonstration]
 ```
 
 | Workflow | Trigger | State |
 |---|---|---|
 | `ci.yml` | pull request and push to `main` | **runs and passes on GitHub** (on the pull requests #22 to #26 and on the pushes to `main`). Jobs: Frontend (Node 22 and 24: install, lint, test, build, upload `dist`), Backend (Node 22 and 24: install, lint, tests against a throwaway PostgreSQL service container, fail if any test was skipped), Backend Docker image (needs Backend), Deploy scripts and Compose (shell syntax, ShellCheck, the offline blue/green, metadata-guard and CI-helper suites, AWS-mode and rehearsal-mode Compose security assertions, the deployment-workflow rules). The matrix jobs run in parallel. The updated "Deploy scripts and Compose" job ran and passed on pull requests #24 to #26 (its first run on #26 failed on one test assertion that depended on a Git file mode; the assertion was corrected and the failed run is kept in the Actions history) |
-| `cd.yml` | `workflow_run` after CI on `main` | **rewritten for staging on AWS and merged into `main`; its jobs have never executed.** Every run so far was `skipped` because the variable `CD_ENABLED` is unset (checked 2026-11-21: no repository variables exist). Sequence: gate, package (image and one bundle), push image and read its digest, **CodeBuild migrator (a failure stops the deployment)**, upload the bundle, deploy through Systems Manager. No SSH, no GitHub secrets. Production is **not** deployed |
-| `rollback.yml` | manual dispatch | **rewritten for staging over Systems Manager and merged into `main`; never run.** It **fails closed**: a production request, a request while `CD_ENABLED` is not `true`, and a request from a ref other than `main` are refused with an error. It never runs migrations |
-| `terraform-ci.yml` | Terraform-related pushes and pull requests | runs static checks only, no AWS access (format, init without a backend, validate, secret scan); a static IAM and gating check was added and passed on pull request #25 and on the push to `main` |
+| `cd.yml` | `workflow_run` after CI on `main` | **rewritten for the lab instance; its deploy jobs have never executed.** Every run so far was `skipped` because the variable `CD_ENABLED` is unset. Jobs: `gate` (CI succeeded for the exact commit, still the tip of `main`), `publish-images` (build backend and frontend images, push to GHCR tagged with the commit SHA, read back the digests, check an anonymous pull), `deploy-staging` (Environment `staging`, SSH through the SSM tunnel), `deploy-production` (Environment `production`, held for the reviewer's approval). SSH only through the pinned SSM tunnel (no inbound port 22), one secret per Environment (`DEPLOY_SSH_KEY`), AWS access by OIDC. **Tested offline and statically only** |
+| `rollback.yml` | manual dispatch | **rewritten for staging and production on the lab instance; never run.** It **fails closed**: a request while `CD_ENABLED` is not `true`, from a ref other than `main`, or for an unknown environment is refused with an error. The job is bound to the chosen Environment, so a production rollback needs the reviewer's approval. It never runs migrations |
+| `terraform-ci.yml` | Terraform-related pushes and pull requests | runs static checks only, no AWS access (format, init without a backend, validate, secret scan) for `infra/terraform` and, in a separate job, for `infra/lab` plus the lab architecture checks |
 | `pipeline-demo.yml` | push to `demo/**` and manual dispatch | the Part H demonstration workflow (generated with GitHub Copilot, per the owner's records in `docs/copilot/`); see [Evidence](#evidence-and-workflow-links) |
 
 **Required checks** on `main` (branch protection, verified by reading the settings on 2026-11-21): Frontend (Node 22), Frontend (Node 24), Backend (Node 22),
@@ -242,59 +236,50 @@ All workflows declare explicit `permissions:` and every `uses:` reference is pin
 
 ## Secrets and variables
 
-**The deployment workflows use no GitHub secrets.** AWS access comes from GitHub OIDC (short-lived credentials), and database secrets live in AWS Secrets Manager. Nothing below holds a value in the repository.
-**Read-only snapshot from 2026-11-21: 0 Actions secrets, 0 Actions variables, 0 Dependabot secrets and 0 GitHub Environments, and `CD_ENABLED` is unset.** This is a point-in-time state: creating any of
-the following is a GitHub settings change that needs separate approval. CD stays disabled while `CD_ENABLED` is unset.
+**The one secret in the deployment path is each Environment's `DEPLOY_SSH_KEY`** (a different ed25519 key per Environment, bound to its Environment on the host). Images are pushed to GHCR with the run's own short-lived `GITHUB_TOKEN`, AWS access comes from GitHub OIDC (short-lived credentials), and the database passwords are **generated on the instance**
+at the first deploy (mode 600, never printed, never stored elsewhere). Nothing below holds a value in the repository.
+GitHub Environments `staging` and `production` exist (main-only; `production` requires the reviewer `Bhabotos`, administrator bypass off; recorded 2026-11-23 with 0 variables and 0 secrets). Creating the variables below is a GitHub
+settings change that needs separate approval; CD stays disabled while `CD_ENABLED` is unset.
 
 | Name | Kind | Purpose | Status |
 |---|---|---|---|
 | `CD_ENABLED` | repository variable | master switch: unless exactly `true`, CD is skipped and a rollback request is refused | not set |
-| `AWS_ROLE_ARN` | `staging` Environment variable | the OIDC deploy role the workflow assumes | referenced; role not created |
-| `AWS_REGION` | `staging` Environment variable | the AWS region (`ap-south-1`) | referenced; not set |
-| `ECR_REPOSITORY` | `staging` Environment variable | the repository the backend image is pushed to | referenced; not set |
-| `ARTIFACT_BUCKET` | `staging` Environment variable | the S3 bucket for release bundles | referenced; not set |
-| `MIGRATOR_PROJECT` | `staging` Environment variable | the CodeBuild migrator project | referenced; not set |
-| `SSM_DEPLOY_DOCUMENT` | `staging` Environment variable | the deploy command document | referenced; not set |
-| `SSM_ROLLBACK_DOCUMENT` | `staging` Environment variable | the rollback command document | referenced; not set |
-| `STAGING_INSTANCE_ID` | `staging` Environment variable | the application instance | referenced; not set |
+| `AWS_ROLE_ARN` | variable of each Environment (`staging`, `production`) | the OIDC deploy role of that Environment (it can only open an SSM port-forwarding session to the instance) | set on both (names verified 2026-11-24) |
+| `AWS_REGION` | variable of each Environment | the AWS region (`ap-south-1`) | set on both |
+| `LAB_INSTANCE_ID` | variable of each Environment | the lab instance the tunnel targets | set on both |
+| `SSH_HOST_KEY` | variable of each Environment | the instance's PUBLIC SSH host key, pinned so strict host-key checking stays on | set on both |
+| `DEPLOY_SSH_KEY` | **secret** of each Environment | that Environment's private deploy key (staging and production differ) | set on both (name verified; value never read) |
+| `GITHUB_TOKEN` | automatic, per run (not a stored secret) | pushes the images to GHCR (`packages: write` in one job only) | in the workflow design |
 
-The earlier SSH names (`SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`, `EC2_HOST`, `EC2_USER`, `SSH_SG_ID`) are **obsolete**; a CI check fails if they reappear in `cd.yml` or `rollback.yml`.
-Where each value comes from (Terraform outputs) is in [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md#4-github-configuration).
-Separate configuration for staging and production exists as non-secret files in [`deploy/env/`](deploy/env/); GitHub Environments `staging` and `production` were **not yet created** as of the snapshot; both were created on 2026-11-23 (main-only; `production` requires reviewer `Bhabotos`, administrator bypass off), still with 0 variables and 0 secrets.
-Database passwords are never in the repository: locally they come from the untracked `deploy/.env`; on AWS the backend reads `shopnest/staging/db-app` from Secrets Manager with the instance role, the migrator reads
-`db-owner`, and only the operator-started bootstrap can read the RDS master secret. The deploy role and the application host cannot read the owner or master secrets.
+Terraform-side values (never committed; both files are git-ignored): `allowed_account_ids` in `infra/lab/lab.tfvars`, and the state bucket name in `infra/lab/backend.hcl`.
+The earlier SSH names (`SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`, `EC2_HOST`, `EC2_USER`, `SSH_SG_ID`) and the earlier AWS-design names (`ECR_REPOSITORY`, `ARTIFACT_BUCKET`, `MIGRATOR_PROJECT`, `STAGING_INSTANCE_ID`) are **obsolete**; a CI check fails if any reappears in `cd.yml` or `rollback.yml`.
+Separate configuration for staging and production exists as non-secret files in [`deploy/env/`](deploy/env/) and as separate GitHub Environments, each with its own variables and its own AWS role.
 
 ## Terraform infrastructure
 
-Status: **written and statically validated (`terraform fmt`, `terraform validate`, Terraform CI, and offline IAM rules). Not planned for the current configuration, not applied. No AWS resource exists.**
-Passing validation does not mean AWS will accept the configuration. Region `ap-south-1`; Terraform CLI profile name `devops` locally; no root credentials and no
-access keys. Details: [`infra/terraform/README.md`](infra/terraform/README.md), [`ARCHITECTURE.md`](infra/terraform/ARCHITECTURE.md),
-[`ARCHITECTURE_SECURITY_REVIEW.md`](infra/terraform/ARCHITECTURE_SECURITY_REVIEW.md), [`REMEDIATION_LOG.md`](infra/terraform/REMEDIATION_LOG.md).
+Status: **`infra/lab/` is written and statically validated (`terraform fmt`, `terraform validate`, 64 static architecture checks). Not planned, not applied. No AWS resource exists.**
+Passing validation does not mean AWS will accept the configuration. Region `ap-south-1`; Terraform CLI profile name `devops` locally; no root credentials and no access keys. Details: [`infra/lab/README.md`](infra/lab/README.md).
 
-What the configuration describes:
-- a VPC with public, application and database subnets across two Availability Zones, an internet gateway and NAT Gateways (one in staging, a documented single point of failure for outbound traffic; one per AZ in production);
-- an Application Load Balancer (HTTP only), an application EC2 instance (staging 1, production 2) managed through AWS Systems Manager with **no inbound SSH rule**;
-- a **private** Amazon RDS PostgreSQL instance (not publicly accessible, TLS required; Multi-AZ enforced for production), reachable only from the application, migrator and bootstrap security groups;
-- an Amazon ECR repository (backend only), and an encrypted, versioned, private S3 bucket for release bundles;
-- **optional, off by default (`enable_cicd = false`):** a GitHub OIDC deploy role, two CodeBuild projects in the private subnets (migrator, and a one-time bootstrap started only by an MFA operator role), their roles and security groups, and two fixed Systems Manager command documents.
+What `infra/lab/` describes:
+- a dedicated VPC, **one public subnet**, an Internet Gateway and a route table (no NAT Gateway);
+- **one `t3.small`** with a public IPv4 address (an Elastic IP by default), a security group that admits **TCP 80 only** (port 22 closed: no inbound SSH, no HTTPS, no database port), IMDSv2, an encrypted root volume and no key pair;
+- a new instance role that can only use Systems Manager; Docker, Compose and git installed at first boot;
+- **optional, off by default (`enable_cicd = false`):** one GitHub OIDC deploy role per Environment and four fixed Systems Manager command documents;
+- remote state in an **existing** S3 bucket (key `terraform/shopnest/terraform.tfstate`, encryption on, S3 lock file); the bucket name is supplied from an untracked file.
 
-**A fresh `terraform plan` is required.** A staging plan file from 2026-11-21 exists locally (git-ignored), but it predates the CI/CD configuration and **must not be reused or applied**; the reasons are in
-[`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md#112-a-fresh-plan-is-required-the-earlier-stagingtfplan-must-not-be-reused). Applying anything requires the owner's explicit approval.
-
-Not yet done: remote state with locking, CloudWatch alarms, HTTPS (HTTP only for now), production, and removal of the now-unneeded, unverified CA download in the instance boot script.
-Approximate cost estimates are in section 12 of the Terraform README (an estimate, not a quote).
+Not created: NAT Gateway, load balancer, RDS, ECR, a state bucket, a key pair, any access key. The earlier design in [`infra/terraform/`](infra/terraform/README.md) (RDS, ECR, ALB, NAT, CodeBuild) is **unchanged and unused by the deployment workflows**; its saved plan
+files are stale and must never be applied. Approximate cost of the lab: about $21 to $26 a month (an estimate, not a quote; see `infra/lab/README.md`).
 
 ## CD architecture and current limitations
 
-- **Written, never run:** `cd.yml` verifies CI succeeded for the exact `main` commit, builds the image and one release bundle, pushes the image to ECR and reads back its **digest**, runs the database
-  migrations in a **CodeBuild migrator inside that exact image** (a failed migration stops the deployment), uploads the bundle to S3, and tells the instance to deploy it through **Systems Manager**: the instance
-  verifies the bundle's SHA-256 before extracting it, pulls the image by digest, proves the metadata-service isolation, and runs the blue/green deploy with automatic rollback.
-  Exit codes 0, 1 and 3 come back unchanged; code 4 means the result could not be confirmed. The sequence, with a diagram, is in [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md#5-deployment-sequence).
+- **Written, never run:** `cd.yml` verifies CI succeeded for the exact `main` commit, builds the backend and frontend images, pushes both to **GHCR** tagged with the commit SHA and reads back their **digests**, checks that the packages can be pulled
+  anonymously, and deploys over **SSH through a Systems Manager port-forwarding tunnel** (no inbound port 22): it fetches the repository at that commit, pulls both images by digest, applies the migrations, and runs the blue/green deploy with automatic rollback.
+  Exit codes 0, 1 and 3 come back unchanged; code 4 means the result could not be confirmed. The sequence, with a diagram, is in [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md).
+- **Production** is deployed by `deploy-production` only, which is bound to the `production` Environment (GitHub holds it until the reviewer approves) and runs only after staging deployed. **Not yet demonstrated on a real deployment.**
 - **Never run against AWS.** The behaviour is covered by offline tests with fakes (see [Testing](#testing-and-validation)), not by any real run.
-- **Production is not deployed** by this workflow (no production infrastructure exists). Its last job, `production-approval`, is only a gate bound to the `production` Environment (it deploys nothing); the Environment and its required reviewer are **not yet configured**, so the approval is not verified.
-- **Unresolved:** how staging gets a demo catalogue (the seed policy refuses staging and the instance cannot seed), the instructor's answer on Systems Manager instead of SSH, and the live-URL rule. See the
-  [unresolved decisions](docs/AWS_STAGING_INTEGRATION.md#14-unresolved-decisions).
-- **Instructor confirmation pending:** the assignment says deployment is "over SSH"; the design uses Systems Manager instead. This is waiting for the instructor's answer. Until then it is not assumed to be acceptable.
+- **Manual GitHub steps remain:** make the two GHCR packages public (one time), capture the real OIDC subject claims, set the Environment variables, then set `CD_ENABLED`.
+- **Instructor confirmation pending:** the assignment says deployment is "over SSH"; the design uses Systems Manager instead (the owner's decision). The instructor has not confirmed it, so it is a **risk to Part E**. The live-URL rule (Part D forbids a server
+  address in the repository, while the assignment asks for a live URL) is likewise the owner's decision, not the instructor's.
 
 ## Zero-downtime strategy and trade-offs
 
@@ -314,12 +299,12 @@ second production instance and a rolling deploy, which is not yet written).
 ## Rollback strategy
 
 - **Automatic:** a release that fails its readiness or post-switch check is rejected or reversed to the last known good release, recorded in the release history.
-- **Manual:** `rollback.yml` (staging only) sends a fixed Systems Manager document that runs `deploy/scripts/rollback.sh`. It refuses a release that is not recorded as deployed, pulls the **recorded image digest** again if the host lost the
-  image (and refuses if ECR no longer has it), restores the **recorded frontend artifact** from S3 after verifying its SHA-256, and moves traffic only after the release passes the same validation as a deploy. It is **never run**.
+- **Manual:** `rollback.yml` (staging, or production after the reviewer's approval) sends a fixed Systems Manager document that runs `deploy/scripts/rollback.sh` from the current `main`. It refuses a release that is not recorded as deployed, pulls the **recorded image digests** (backend and frontend)
+  again from GHCR if the host lost them, and moves traffic only after the release passes the same validation as a deploy. It is **never run**.
 - **Exit codes:** `0` success; `1` failed with the previous release serving (or restored); `2` bad arguments; `3` the deploy or rollback **and** the recovery failed, which needs an operator now; `4` the result could not be confirmed
   (treat as failed). Codes 1 and 3 are covered by the offline suites only; **no real code 3 has been observed**.
-- **Database:** a rollback **never runs migrations** and **never reverses the schema**. Recovery from a bad migration is a fix-forward migration or a point-in-time restore (staging keeps one day of backups).
-- **Evidence:** local rehearsal and offline tests only. The staging demonstration required by the assignment is **pending**.
+- **Database:** a rollback **never runs migrations** and **never reverses the schema**. Recovery from a bad migration is a fix-forward migration or restoring the database volume (the lab instance keeps no backup: demo data).
+- **Evidence:** local rehearsal and offline tests only. The demonstration required by the assignment (a deliberately broken release recovering by itself) is **pending** a real deployment.
 
 ## Security practices
 
@@ -327,21 +312,20 @@ second production instance and a rolling deploy, which is not yet written).
   The scanner's IPv4 rule has two deliberate, narrow exceptions beyond loopback (approved 2026-11-21): the project's own private container network and the documented EC2 metadata address, neither of which is a server address.
   A final all-history scan is required before submission.
 - GitHub secret scanning and push protection enabled; branch protection with required checks; no direct pushes to `main`; work goes through feature branches and pull requests.
-- No AWS root credentials, no permanent AWS access keys and no GitHub secrets in the deployment path: GitHub OIDC with short-lived credentials, trust pinned to an exact subject. Built as code, **not applied**.
-- Least-privilege identities by design: the deploy role cannot read any secret; the application host cannot read the owner or master database secrets; only an MFA operator role can start the one-time bootstrap. Enforced by static checks on the Terraform source; **not tested against AWS**.
+- No AWS root credentials, no permanent AWS access keys and only one GitHub secret per Environment (`DEPLOY_SSH_KEY`) in the deployment path: GHCR pushes use the run's own token, AWS access is GitHub OIDC with short-lived credentials, trust pinned to an exact Environment subject. The roles and the instance exist (read-only checks, 2026-11-24); **no deploy has run**.
+- Least-privilege identities by design: the instance role can only use Systems Manager; each Environment's deploy role can send only that Environment's two fixed documents to the one instance and cannot read a secret or change infrastructure. Enforced by static checks on the Terraform source (`deploy/tests/lab.test.sh`); **not tested against AWS**.
 - The deployment workflows are SSM-only; a static check fails if SSH, a stored credential, an unpinned action, or an expression inside a script reappears.
-- **Metadata-service isolation (designed, not proven):** only the two backend containers may reach the EC2 metadata service; every other container is dropped by a host firewall rule and the deploy stops if the isolation cannot be confirmed.
+- **Metadata service:** in the lab the instance's metadata hop limit is 1, so no container can reach the instance role at all (the containers need no AWS credential: images and code are public). The earlier design's host firewall guard is not used by the lab. **Not verified on a real instance.**
   A compromised backend would still hold the instance role (residual risk, documented). This is **not verified on a real instance**; see [section 7 of the AWS document](docs/AWS_STAGING_INTEGRATION.md#7-metadata-service-imds-isolation).
-- The database has no published port in the development and production Compose files or in the Terraform design (a CI check enforces this for the production Compose file). The one exception is the disposable test database in `deploy/docker-compose.test.yml`, which is bound to loopback only (`127.0.0.1`). Application containers run as non-root, with all capabilities dropped in the AWS Compose file. Third-party images are pinned by version and digest; the application images are tagged per release and deployed by digest.
-- TLS to RDS is mandatory and verified against a pinned CA bundle. **That bundle's checksum has not been compared with a value published by AWS** (none could be retrieved); see the AWS document, [section 10](docs/AWS_STAGING_INTEGRATION.md#10-certificates-the-rds-ca-bundle-and-the-user_data-download).
+- The database has no published port in the development Compose file, in the lab Compose configuration (checked in CI with `docker compose config`) or in the Terraform design, and the lab's security group admits only port 80. The one exception is the disposable test database in `deploy/docker-compose.test.yml`, which is bound to loopback only (`127.0.0.1`). Application containers run as non-root. Third-party images are pinned by version and digest; the application images are tagged per release and deployed by digest.
+- The lab uses a PostgreSQL container, so there is no RDS TLS to verify; the database is reachable only on the internal Docker network. The earlier design's RDS CA bundle is unchanged and unused by the lab.
 - Workflows use least-privilege `permissions:` and SHA-pinned actions. One deliberate exception: CI's PostgreSQL service container uses trust authentication with no password, because it is a throwaway database that exists only on the runner for the length of one job and holds no real data.
 
 ## Deployment prerequisites
 
-Nothing can be deployed to AWS yet. Before a first deployment, all of the following must exist and be approved by the owner: an AWS account profile with short-lived credentials, an untracked `staging.tfvars`, a **fresh, reviewed** `terraform plan`
-and an approved apply (the earlier saved plan must not be reused), `enable_cicd` with the real GitHub OIDC subject, the two database secrets, the host settings file, the GitHub Environment variables listed above, the one-time database bootstrap,
-and the metadata-isolation tests on a real instance. The exact order, including why the first deploy attempt stops at the migrator by design, is in
-[`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md#12-first-bring-up-order-when-approved). The wider plan and approval points are in [`docs/PROJECT_EXECUTION_ROADMAP.md`](docs/PROJECT_EXECUTION_ROADMAP.md).
+Nothing can be deployed to AWS yet. Before a first deployment, all of the following must exist and be approved by the owner: the AWS profile `devops` with short-lived credentials, the **verified** existing state bucket, an untracked `backend.hcl` and `lab.tfvars`,
+a **reviewed** `terraform plan` and an approved apply of `infra/lab` (the saved plans in `infra/terraform` must never be used), the real OIDC subject claims, the two GHCR packages set to public, the Environment variables listed above, and finally `CD_ENABLED=true`.
+The exact order is in [`infra/lab/README.md`](infra/lab/README.md) and [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md).
 
 ## Troubleshooting
 
@@ -370,10 +354,10 @@ Status words: **Done** = real evidence exists; **Partial** = built, with the gap
 | A. CI/CD concepts | 5 | Written in this README; awaiting the owner's review | [Part A](#part-a-cicd-concepts-for-shopnest-management) |
 | B. CI pipeline | 15 | Partial: CI passes on GitHub; a failing required check blocking a merge is demonstrated by the deliberate failing test on PR #28 (the failed and recovered runs are in `docs/screenshots/part-h/`; the blocked-merge view itself was not captured); the owner's own tests are pending | [workflows](#github-actions-workflows) |
 | C. Workflow architecture | 10 | Partial: CI, matrix, parallel jobs, artifact done; the rewritten CD never run; screenshots partial (the CI job graph appears in the Part H screenshots; no CD run exists to show) | [workflows](#github-actions-workflows) |
-| D. Secrets and configuration | 10 | Partial: no secrets in the repo; OIDC, Secrets Manager and the operator role are written as code, not applied. GitHub Environments `staging` and `production` are configured (main-only; `production` requires reviewer `Bhabotos`; 0 variables, 0 secrets). **Manual approval demonstrated with a separate demonstration workflow only:** `approval-demo` run [45128964969](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45128964969) (commit `3738e0bb22f4e67164abecec11d0f7a58779216b`, `main`) paused at "Waiting for review", was approved by `Bhabotos`, and finished `success`. It deploys nothing and touches no AWS; the `production-approval` job in `cd.yml` has never run, and no real secret usage or production deployment exists. Screenshots in the repository: [waiting for review](docs/screenshots/part-d/waiting%20.png) and [approved, success](docs/screenshots/part-d/Human%20Approval.png) (neither shows the run ID in a URL; the run page title `approval-demo #1`, commit `3738e0b`, the approval by `Bhabotos` and the success status are visible, and the run ID is confirmed by the GitHub API record). Missing: a screenshot of the Environment settings page | [secrets](#secrets-and-variables) |
-| E. Deployment to EC2 | 15 | Pending: Terraform and the deployment code are written, nothing is deployed | [Terraform](#terraform-infrastructure) |
-| F. Zero downtime | 15 | Partial: local evidence only; the AWS path is not exercised | [strategy](#zero-downtime-strategy-and-trade-offs) |
-| G. Monitoring and rollback | 15 | Partial: local and offline evidence only; the rewritten rollback workflow never run | [rollback](#rollback-strategy) |
+| D. Secrets and configuration | 10 | Partial: no secrets in the repo; the OIDC deploy roles (one per Environment) exist in AWS (read-only check, 2026-11-24). GitHub Environments `staging` and `production` are configured (main-only; `production` requires reviewer `Bhabotos`; 4 variables and the `DEPLOY_SSH_KEY` secret per Environment, names verified 2026-11-24). **Manual approval demonstrated with a separate demonstration workflow only:** `approval-demo` run [45128964969](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45128964969) (commit `3738e0bb22f4e67164abecec11d0f7a58779216b`, `main`) paused at "Waiting for review", was approved by `Bhabotos`, and finished `success`. It deploys nothing and touches no AWS; the `production-approval` job in `cd.yml` has never run, and no real secret usage or production deployment exists. Screenshots in the repository: [waiting for review](docs/screenshots/part-d/waiting%20.png) and [approved, success](docs/screenshots/part-d/Human%20Approval.png) (neither shows the run ID in a URL; the run page title `approval-demo #1`, commit `3738e0b`, the approval by `Bhabotos` and the success status are visible, and the run ID is confirmed by the GitHub API record). Missing: a screenshot of the Environment settings page | [secrets](#secrets-and-variables) |
+| E. Deployment to EC2 | 15 | Pending: the instance, the roles and the Environment configuration exist, and the SSH-over-SSM-tunnel deployment code is merged and tested offline; **no deployment has run** | [Terraform](#terraform-infrastructure), [lab deployment](docs/LAB_DEPLOYMENT.md) |
+| F. Zero downtime | 15 | Partial: local evidence only; the lab deploy path is not exercised and zero downtime is **not proven** until a request loop against the live URL shows zero failures during a real deploy | [strategy](#zero-downtime-strategy-and-trade-offs), [how it will be proven](docs/LAB_DEPLOYMENT.md) |
+| G. Monitoring and rollback | 15 | Partial: local and offline evidence only; the rewritten rollback workflow and the automatic-rollback demonstration have never run on the instance | [rollback](#rollback-strategy) |
 | H. Debugging and Copilot | 10 | Partial: three deliberate failures (YAML syntax error, deployment health check, failing test), each with a failed and a recovery run, root cause and fix reference, written up in [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md); Copilot's generation of `pipeline-demo.yml` is documented in [`docs/copilot/`](docs/copilot/). **Not available:** the Copilot troubleshooting prompts and responses (see [Evidence](#evidence-and-workflow-links)); failure 2 has no fix commit (its recovery was a corrected workflow input). **Screenshots:** 13 are in [`docs/screenshots/part-h/`](docs/screenshots/part-h/) and mapped to the runs in the evidence document (some are partial). **Missing:** the expanded health-check step for failure 2 and a screenshot of the blocked merge for failure 3 | [evidence](#evidence-and-workflow-links), [`docs/failures/PART_H_FAILURES.md`](docs/failures/PART_H_FAILURES.md) |
 | I. Documentation | 5 | Partial: this README and the AWS integration document; the Part H screenshots are added (some are partial); a clean-clone dry run was completed locally on 2026-11-23 for commit `053648a` (frontend 39 passed; backend 160 passed, 11 PostgreSQL integration tests skipped because `TEST_DATABASE_URL` was unset; workflow checks 77 passed; Terraform IAM checks 97 passed) and an all-history gitleaks 8.30.1 scan found no leaks: [`docs/evidence/clean-clone-2026-11-23/`](docs/evidence/clean-clone-2026-11-23/). That test did not include `approval-demo.yml`, did not run on AWS or in GitHub Actions, and did not run the integration tests; the 2 Part D screenshots are in `docs/screenshots/part-d/`; no CI-matrix, CD or live-application screenshots exist; the live URL is pending | this file, [`docs/AWS_STAGING_INTEGRATION.md`](docs/AWS_STAGING_INTEGRATION.md) |
 
@@ -424,5 +408,6 @@ Screenshots for other parts (for example a CD run or a deployed application) do 
 
 ## Live URL
 
-**Pending.** The application is not deployed, so there is no live address. Whether and how an address may appear in this repository, given the rule that no server address may be committed,
-is waiting for the instructor's clarification. No address will be written here until that is resolved.
+**Pending.** The application is not deployed, so there is no live address. The owner has decided that the deployed application is public on HTTP port 80 (production only), so the address will be `http://<public address>/`. Retrieve it locally after an approved deployment
+with `terraform output -raw public_ip` in `infra/lab` (see [`docs/LAB_DEPLOYMENT.md`](docs/LAB_DEPLOYMENT.md#live-url)). **No address is written in this repository yet.** Writing it here is a deliberate step after a real deployment; Part D forbids a server address
+in the repository while the assignment asks for a live URL, and the instructor has not confirmed how to reconcile the two.
