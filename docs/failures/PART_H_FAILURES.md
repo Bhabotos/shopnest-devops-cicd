@@ -80,6 +80,8 @@ made with Claude Code's assistance. Any other steps the owner took, and any Copi
 recall which failure it covered, and no Copilot conversation is stored in this repository or in its GitHub commit, pull request or comment records. The prompt, the answer and the changes made are therefore
 not available and are **not reconstructed**. This is not assumed to match any other failure.
 
+**Update 2026-11-25 (failure 1 only).** A *retrospective* GitHub Copilot Chat analysis of this preserved failure is now recorded as screenshots (`docs/screenshots/copilot/09_yaml_failure_copilot_analysis.png`, `10_yaml_failed_run.png`, `11_yaml_recovery.png`; see `docs/EVIDENCE_INDEX.md`). It was captured after the fact, not during the original troubleshooting, which was done with Claude Code; no prompt file or verbatim answer is stored, and its acceptance by the instructor is unconfirmed. Failures 2 and 3 are unchanged: **Not recalled / Evidence unavailable**.
+
 ---
 
 ## Failure 2: deployment / connection failure (health check)
