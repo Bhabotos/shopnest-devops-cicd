@@ -80,6 +80,8 @@ made with Claude Code's assistance. Any other steps the owner took, and any Copi
 recall which failure it covered, and no Copilot conversation is stored in this repository or in its GitHub commit, pull request or comment records. The prompt, the answer and the changes made are therefore
 not available and are **not reconstructed**. This is not assumed to match any other failure.
 
+**Update 2026-11-25 (failure 1 only).** A *retrospective* GitHub Copilot Chat analysis of this preserved failure is now recorded as screenshots (`docs/screenshots/copilot/09_yaml_failure_copilot_analysis.png`, `10_yaml_failed_run.png`, `11_yaml_recovery.png`; see `docs/EVIDENCE_INDEX.md`). It was captured after the fact, not during the original troubleshooting, which was done with Claude Code; no prompt file or verbatim answer is stored, and its acceptance by the instructor is unconfirmed. Failures 2 and 3 are unchanged: **Not recalled / Evidence unavailable**.
+
 ---
 
 ## Failure 2: deployment / connection failure (health check)
@@ -185,6 +187,8 @@ Deploy scripts and Compose, Frontend 22 and 24, including the PostgreSQL integra
 recall whether it covered this failure. The troubleshooting recorded above was done with Claude Code. No Copilot conversation is stored in the repository or in GitHub's records, so a Copilot prompt, answer and
 changes are not available and are **not reconstructed**.
 
+**Update 2026-11-25 (failure 3 only).** A *retrospective* GitHub Copilot Chat analysis of this preserved failure is now recorded as screenshots (`docs/screenshots/copilot/12_backend_test_copilot_analysis.png`, `13_backend_failed_run.png`, `14_backend_recovery.png`; see `docs/EVIDENCE_INDEX.md`). It was captured after the fact, not during the original troubleshooting, which was done with Claude Code; only the lower part of Copilot's answer is visible, no prompt file or verbatim answer is stored, and its acceptance by the instructor is unconfirmed.
+
 ---
 
 ## How the required checks stopped a failing change from merging
@@ -206,7 +210,7 @@ read-back document above. There is **no screenshot of the blocked merge**.
 `docs/copilot/` records how `pipeline-demo.yml` was **generated** with Copilot: the prompts (labelled EXACT or PARTIAL), the responses, the edits, and an assistant-written SHA comparison
 that is explicitly not Copilot output. **No Copilot troubleshooting conversation** is in the repository, in any commit message, or in any pull request, issue or review comment (0 comments exist in the
 repository). The project owner states that GitHub Copilot was used for troubleshooting; this is the owner's statement and is not independently verified. The owner could not recall which failure(s) it covered or the
-prompts and answers, which are therefore marked **Not recalled / Evidence unavailable** and are not assumed to be the same for each failure. Part H asks for this evidence for each failure, so this remains an open gap in the evidence.
+prompts and answers, which are therefore marked **Not recalled / Evidence unavailable** and are not assumed to be the same for each failure. Part H asks for this evidence for each failure, so this remains an open gap in the evidence. **Update 2026-11-25:** retrospective Copilot Chat analyses of failures 1 and 3 are now recorded as screenshots (`docs/screenshots/copilot/09` to `14`, see `docs/EVIDENCE_INDEX.md`); failure 2 still has none.
 
 **Local check on the owner's machine (cannot be verified from the repository).** VS Code's chat index for this repository's workspace lists three chat sessions on 2026-11-21, all before the first failure commit
 (`7c526dc`, 13:48:27 +06:00): two empty sessions titled "New Chat" (created 12:38 and 13:03, UTC+06:00) and one titled "GitHub Actions workflow for pipeline-demo.yml" (created 13:03, last request 13:21, UTC+06:00).
