@@ -23,7 +23,7 @@ Details, exact prompts and the evidence table: [`COPILOT_EXERCISE.md`](COPILOT_E
 
 ## C. GitHub web (reviewer and screenshots)
 - [ ] **C1. Production approval run [45432917228](https://github.com/Bhabotos/shopnest-devops-cicd/actions/runs/45432917228)** (an STS role-assumption check, not a deployment) is still waiting for you as the production reviewer: approve it, reject it, or leave it. Claude never approves it. Any production *deployment* approval is a separate decision you take in the `Deploy to production` job of a CD run.
-- [ ] **C2. Screenshots for Parts E, F and G** (none exists yet): the exact pages and what each must show are in [`SCREENSHOT_CHECKLIST.md`](SCREENSHOT_CHECKLIST.md). Crop out the instance id and the AWS account id.
+- [ ] **C2. Screenshots for Parts E, F and G** (some exist: staging CD, request loop, automatic rollback and four redacted AWS console pages in `docs/screenshots/`; missing: manual rollback and restore, the real-fault run 45500242957, `staging-verify` run 45548376271, anything for production): the exact pages and what each must show are in [`SCREENSHOT_CHECKLIST.md`](SCREENSHOT_CHECKLIST.md). Crop out the instance id and the AWS account id.
 
 ## D. Decisions that are yours
 - [ ] The **live URL** in the README: only possible after a production deployment (staging is loopback-only). Part D forbids a server address in the repository while the assignment asks for a URL: decide how to reconcile it, ideally with your instructor.
