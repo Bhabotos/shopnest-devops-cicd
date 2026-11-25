@@ -5,9 +5,9 @@ Every run below (all 36 run links in the README, `PROJECT_STATUS.md` and the doc
 ## Final staging state (at the time of writing)
 | Item | Result |
 |---|---|
-| Commit live on staging | `dba02a851c20322af4554e4fb6aa0d10a6ca2a41` (merge of PR #62), deployed by CD run 45501575887: the host log (artifact `deploy-log-staging-dba02a85...`) shows `release dba02a8 is live on green`, `DEPLOY SUCCEEDED` and `CONFIRMED` with backend digest `sha256:e2df6e00...` and frontend digest `sha256:5dba1332...`; the previous release was `5a20d16` (blue). The commit is read from the deploy log and the GitHub deployment record, because `/version` is not public |
-| Checked from outside | `staging-verify` run 45548376271 (2026-11-25 04:40Z, after the deploy): frontend `GET /` 200 and HTML; `/health` 200 with status ok; `/version` not public (404, internal by design); `GET /api/products` 200 with a non-empty catalogue (backend to PostgreSQL). Database connectivity is shown by `/health` (`SELECT 1`) and the catalogue answer; the database was not queried directly. The earlier check 45489787099 (commit `4a557d0`) is kept below |
-| Production | **not deployed**: every CD run's `deploy-production` job is waiting, pending, cancelled (superseded) or skipped; it has never been approved. Runs still waiting on 2026-11-25: CD 45501575887 (pending), CD 45473412551 and 45469834249 (waiting), oidc-sts-test 45432917228 (waiting) |
+| Commit live on staging | `6bac513de75d51ca6283999332c22132427b5ddc` (merge of PR #63), deployed by CD run 45570214913: the host log (artifact `deploy-log-staging-6bac513d...`) shows `release 6bac513 is live on blue`, `DEPLOY SUCCEEDED` and `CONFIRMED` with backend digest `sha256:0ac007e6...` and frontend digest `sha256:4d3d85d3...`; no fault file armed; the previous release was `dba02a8` (green). The commit is read from the deploy log, because `/version` is not public |
+| Checked from outside | `staging-verify` run 45570488796 (2026-11-25, after the deploy): frontend `GET /` 200 and HTML; `/health` 200 with status ok; `/version` not public (404, internal by design); `GET /api/products` 200 with a non-empty catalogue (backend to PostgreSQL). Database connectivity is shown by `/health` (`SELECT 1`) and the catalogue answer; the database was not queried directly. Earlier checks (45548376271 for `dba02a8`, 45489787099 for `4a557d0`) are kept below |
+| Production | **not deployed**: every CD run's `deploy-production` job is waiting, pending, cancelled (superseded) or skipped; it has never been approved. Runs still open on 2026-11-25: CD 45570214913 (pending, newest), CD 45473412551 and 45469834249 (waiting), oidc-sts-test 45432917228 (waiting) |
 
 Every merge to `main` deploys to staging while `CD_ENABLED=true`, so the commit above is the newest one at the time of writing (2026-11-25); the run list shows later ones.
 
@@ -46,14 +46,17 @@ Every merge to `main` deploys to staging while `CD_ENABLED=true`, so the commit 
 | 45489277843 | CD | workflow_run | cancelled* | `4a557d0` | staging deploy (staging job succeeded) |
 | 45489787099 | staging-verify | workflow_dispatch | success | `4a557d0` | endpoint verification of that commit |
 | 45499313336 | staging-verify | workflow_dispatch | success | `5a20d16` | endpoint verification before the real-fault demonstration (22:16Z) |
-| 45501575887 | CD | workflow_run | pending (production job) | `dba02a8` | **latest staging deploy** (staging job succeeded, `CONFIRMED`) |
-| 45548376271 | staging-verify | workflow_dispatch | success | `dba02a8` | **final endpoint verification** (2026-11-25): frontend, `/health`, `/version` hidden, `/api/products` |
+| 45501575887 | CD | workflow_run | cancelled* | `dba02a8` | staging deploy (staging job succeeded, `CONFIRMED`); superseded |
+| 45548376271 | staging-verify | workflow_dispatch | success | `dba02a8` | endpoint verification of that commit |
+| 45569601001 | CI | push | success | `6bac513` | main after PR #63 |
+| 45570214913 | CD | workflow_run | pending (production job) | `6bac513` | **latest staging deploy** (staging job succeeded, `CONFIRMED`) |
+| 45570488796 | staging-verify | workflow_dispatch | success | `6bac513` | **final endpoint verification** (2026-11-25): frontend, `/health`, `/version` hidden, `/api/products` |
 | 45554820233 | Copilot Generated CI | push | success | `361830d` | Part H1: run of the Copilot-generated workflow (branch `copilot-demo/generated-ci-20261125`) |
 | 45556640079 | Copilot Generated CI | push | success | `754db84` | same workflow, triggered by the screenshots commit |
 
 \* GitHub marks a CD run `cancelled` when a newer run's *pending* production job supersedes its own pending production job (the production jobs queue behind a waiting one); in both cases the `deploy-staging` job itself succeeded.
 
-## Failed and cancelled runs (18, all kept) and what each one is
+## Failed and cancelled runs (19, all kept) and what each one is
 | Run | Result | Workflow / branch | Class | Qualifies as one of the three required Part H failures? |
 |---|---|---|---|---|
 | 44884178546 | failure | pipeline-demo, push, `demo/yaml-syntax-error` | **deliberate**, YAML syntax error; recovery 44884710861 (fix commit `d2b645c`) | **Yes, as a deliberate failure** (scenario 1). Its Copilot troubleshooting is unavailable and not reconstructed |
@@ -68,7 +71,7 @@ Every merge to `main` deploys to staging while `CD_ENABLED=true`, so the commit 
 | 45478319860 | cancelled | staging-verify | a redundant queued traffic loop that I cancelled | no |
 | 45471417111 | cancelled | ssh-preflight | a probe that proved a waiting production job holds a shared concurrency group; I cancelled it | no |
 | 45455233746 | cancelled | Terraform CI, PR | superseded by a newer push to the PR | no |
-| 45479105861, 45477964033, 45486448054, 45489277843, 45492040334, 45495732856 | cancelled | CD | see the note above: the staging job of each succeeded (read through the API on 2026-11-25); only the production job was superseded | no |
+| 45479105861, 45477964033, 45486448054, 45489277843, 45492040334, 45495732856, 45501575887 | cancelled | CD | see the note above: the staging job of each succeeded (read through the API on 2026-11-25); only the production job was superseded | no |
 
 **Summary for Part H.** Three deliberate failures exist as real runs with recoveries (YAML, deployment health check, test); what is missing is GitHub Copilot's role in troubleshooting them, which only the owner can supply. [`COPILOT_EXERCISE.md`](COPILOT_EXERCISE.md) prepares one workflow-generation prompt and three fresh, safe failure scenarios with the owner's Copilot troubleshooting prompts and an evidence checklist.
 
